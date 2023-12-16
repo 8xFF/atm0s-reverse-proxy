@@ -1,9 +1,16 @@
-use std::{net::{SocketAddr, Ipv4Addr}, pin::Pin, task::{Context, Poll}};
+use std::{
+    net::{Ipv4Addr, SocketAddr},
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use async_std::net::{TcpListener, TcpStream};
-use futures::{io::{ReadHalf, WriteHalf}, AsyncReadExt, Future, AsyncRead, AsyncWrite};
+use futures::{
+    io::{ReadHalf, WriteHalf},
+    AsyncRead, AsyncReadExt, AsyncWrite, Future,
+};
 
-use super::{AgentListener, AgentConnection, AgentSubConnection};
+use super::{AgentConnection, AgentListener, AgentSubConnection};
 
 pub struct AgentTcpListener {
     tcp_listener: TcpListener,
@@ -13,13 +20,22 @@ impl AgentTcpListener {
     pub async fn new(port: u16) -> Option<Self> {
         log::info!("AgentTcpListener::new {}", port);
         Some(Self {
-            tcp_listener: TcpListener::bind(SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port)).await.ok()?,
+            tcp_listener: TcpListener::bind(SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port))
+                .await
+                .ok()?,
         })
     }
 }
 
 #[async_trait::async_trait]
-impl AgentListener<AgentTcpConnection, AgentTcpSubConnection, ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>> for AgentTcpListener {
+impl
+    AgentListener<
+        AgentTcpConnection,
+        AgentTcpSubConnection,
+        ReadHalf<yamux::Stream>,
+        WriteHalf<yamux::Stream>,
+    > for AgentTcpListener
+{
     async fn recv(&mut self) -> Option<AgentTcpConnection> {
         let (mut stream, remote) = self.tcp_listener.accept().await.ok()?;
         log::info!("[AgentTcpListener] new conn from {}", remote);
@@ -40,7 +56,9 @@ pub struct AgentTcpConnection {
 }
 
 #[async_trait::async_trait]
-impl AgentConnection<AgentTcpSubConnection, ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>> for AgentTcpConnection {
+impl AgentConnection<AgentTcpSubConnection, ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>>
+    for AgentTcpConnection
+{
     fn domain(&self) -> String {
         self.domain.clone()
     }
@@ -57,16 +75,19 @@ impl AgentConnection<AgentTcpSubConnection, ReadHalf<yamux::Stream>, WriteHalf<y
     async fn recv(&mut self) -> Option<()> {
         RecvStreamsClient {
             connection: &mut self.connector,
-        }.await
+        }
+        .await
     }
 }
 
 pub struct AgentTcpSubConnection {
-    stream: yamux::Stream
+    stream: yamux::Stream,
 }
 
-impl AgentSubConnection<ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>> for AgentTcpSubConnection {
-    fn split (self) -> (ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>) {
+impl AgentSubConnection<ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>>
+    for AgentTcpSubConnection
+{
+    fn split(self) -> (ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>) {
         AsyncReadExt::split(self.stream)
     }
 }
@@ -85,10 +106,8 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
         match this.connection.poll_new_outbound(cx) {
-            Poll::Ready(stream) => {
-                return Poll::Ready(stream)
-            }
-            Poll::Pending => Poll::Pending
+            Poll::Ready(stream) => return Poll::Ready(stream),
+            Poll::Pending => Poll::Pending,
         }
     }
 }
@@ -107,16 +126,10 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
         match this.connection.poll_next_inbound(cx) {
-            Poll::Ready(Some(Ok(_stream))) => {
-                return Poll::Ready(Some(()))
-            }
-            Poll::Ready(Some(Err(_e))) => {
-                return Poll::Ready(None)
-            }
-            Poll::Ready(None) => {
-                return Poll::Ready(None)
-            }
-            Poll::Pending => Poll::Pending
+            Poll::Ready(Some(Ok(_stream))) => return Poll::Ready(Some(())),
+            Poll::Ready(Some(Err(_e))) => return Poll::Ready(None),
+            Poll::Ready(None) => return Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
         }
     }
 }

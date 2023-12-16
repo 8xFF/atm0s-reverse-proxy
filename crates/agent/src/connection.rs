@@ -5,10 +5,12 @@ use futures::{AsyncRead, AsyncWrite};
 pub mod tcp;
 
 pub trait SubConnection<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>: Send + Sync {
-    fn split (self) -> (R, W);
+    fn split(self) -> (R, W);
 }
 
 #[async_trait::async_trait]
-pub trait Connection<S: SubConnection<R, W>, R: AsyncRead + Unpin, W: AsyncWrite + Unpin>: Send + Sync {
+pub trait Connection<S: SubConnection<R, W>, R: AsyncRead + Unpin, W: AsyncWrite + Unpin>:
+    Send + Sync
+{
     async fn recv(&mut self) -> Option<S>;
 }

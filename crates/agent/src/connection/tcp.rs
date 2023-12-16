@@ -1,8 +1,11 @@
-use std::{pin::Pin, task::{Context,Poll}};
+use std::{
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use async_std::net::TcpStream;
-use futures::{AsyncRead, AsyncWrite, AsyncReadExt, Future, AsyncWriteExt};
 use futures::io::{ReadHalf, WriteHalf};
+use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Future};
 use yamux::Mode;
 
 use super::{Connection, SubConnection};
@@ -13,14 +16,12 @@ pub struct TcpSubConnection {
 
 impl TcpSubConnection {
     pub fn new(stream: yamux::Stream) -> Self {
-        Self {
-            stream,
-        }
+        Self { stream }
     }
 }
 
 impl SubConnection<ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>> for TcpSubConnection {
-    fn split (self) -> (ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>) {
+    fn split(self) -> (ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>) {
         AsyncReadExt::split(self.stream)
     }
 }
@@ -40,12 +41,14 @@ impl TcpConnection {
 }
 
 #[async_trait::async_trait]
-impl Connection<TcpSubConnection, ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>> for TcpConnection {
+impl Connection<TcpSubConnection, ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>>
+    for TcpConnection
+{
     async fn recv(&mut self) -> Option<TcpSubConnection> {
         let mux_server = YamuxConnectionServer::new(&mut self.conn);
         match mux_server.await {
             Ok(Some(stream)) => Some(TcpSubConnection::new(stream)),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -57,9 +60,7 @@ pub struct YamuxConnectionServer<'a, T> {
 
 impl<'a, T> YamuxConnectionServer<'a, T> {
     pub fn new(connection: &'a mut yamux::Connection<T>) -> Self {
-        Self {
-            connection,
-        }
+        Self { connection }
     }
 }
 
@@ -76,7 +77,7 @@ where
                 log::info!("YamuxConnectionServer new stream");
                 Poll::Ready(Ok(stream))
             }
-            Poll::Pending => Poll::Pending
-        }   
+            Poll::Pending => Poll::Pending,
+        }
     }
 }

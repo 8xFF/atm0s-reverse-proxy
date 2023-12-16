@@ -1,8 +1,11 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use async_std::net::{TcpListener, TcpStream};
-use futures::{io::{ReadHalf, WriteHalf}, AsyncReadExt};
-use tls_parser::{parse_tls_plaintext, parse_tls_extensions};
+use futures::{
+    io::{ReadHalf, WriteHalf},
+    AsyncReadExt,
+};
+use tls_parser::{parse_tls_extensions, parse_tls_plaintext};
 
 use super::{ProxyListener, ProxyTunnel};
 
@@ -15,14 +18,18 @@ impl ProxyHttpListener {
     pub async fn new(port: u16, tls: bool) -> Option<Self> {
         log::info!("ProxyHttpListener::new {}", port);
         Some(Self {
-            tcp_listener: TcpListener::bind(SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port)).await.ok()?,
+            tcp_listener: TcpListener::bind(SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port))
+                .await
+                .ok()?,
             tls,
         })
     }
 }
 
 #[async_trait::async_trait]
-impl ProxyListener<ProxyHttpTunnel, ReadHalf<TcpStream>, WriteHalf<TcpStream>> for ProxyHttpListener {
+impl ProxyListener<ProxyHttpTunnel, ReadHalf<TcpStream>, WriteHalf<TcpStream>>
+    for ProxyHttpListener
+{
     async fn recv(&mut self) -> Option<ProxyHttpTunnel> {
         let (stream, remote) = self.tcp_listener.accept().await.ok()?;
         log::info!("[ProxyHttpListener] new conn from {}", remote);
@@ -33,7 +40,7 @@ impl ProxyListener<ProxyHttpTunnel, ReadHalf<TcpStream>, WriteHalf<TcpStream>> f
             stream,
             tls: self.tls,
         })
-    }   
+    }
 }
 
 pub struct ProxyHttpTunnel {
@@ -52,7 +59,10 @@ impl ProxyTunnel<ReadHalf<TcpStream>, WriteHalf<TcpStream>> for ProxyHttpTunnel 
 
     async fn wait(&mut self) -> Option<()> {
         self.first_pkt_size = self.stream.read(&mut self.first_pkt).await.ok()?;
-        log::info!("[ProxyHttpTunnel] read {} bytes for determine url", self.first_pkt_size);
+        log::info!(
+            "[ProxyHttpTunnel] read {} bytes for determine url",
+            self.first_pkt_size
+        );
         if self.tls {
             self.domain = get_sni_from_packet(&self.first_pkt[..self.first_pkt_size])?;
         } else {
@@ -68,13 +78,16 @@ impl ProxyTunnel<ReadHalf<TcpStream>, WriteHalf<TcpStream>> for ProxyHttpTunnel 
     fn domain(&self) -> &str {
         &self.domain
     }
-    fn split (self) -> (ReadHalf<TcpStream>, WriteHalf<TcpStream>) {
+    fn split(self) -> (ReadHalf<TcpStream>, WriteHalf<TcpStream>) {
         AsyncReadExt::split(self.stream)
     }
 }
 
 fn get_sni_from_packet(packet: &[u8]) -> Option<String> {
-    let res: Result<(&[u8], tls_parser::TlsPlaintext), tls_parser::Err<tls_parser::nom::error::Error<&[u8]>>> = parse_tls_plaintext(&packet);
+    let res: Result<
+        (&[u8], tls_parser::TlsPlaintext),
+        tls_parser::Err<tls_parser::nom::error::Error<&[u8]>>,
+    > = parse_tls_plaintext(&packet);
     if res.is_err() {
         return None;
     }
@@ -84,7 +97,10 @@ fn get_sni_from_packet(packet: &[u8]) -> Option<String> {
             // get the extensions
             let extensions: &[u8] = client_hello.ext.unwrap();
             // parse the extensions
-            let res: Result<(&[u8], Vec<tls_parser::TlsExtension>), tls_parser::Err<tls_parser::nom::error::Error<&[u8]>>> = parse_tls_extensions(extensions);
+            let res: Result<
+                (&[u8], Vec<tls_parser::TlsExtension>),
+                tls_parser::Err<tls_parser::nom::error::Error<&[u8]>>,
+            > = parse_tls_extensions(extensions);
             // iterate over the extensions and find the SNI
             for extension in res.unwrap().1 {
                 if let tls_parser::TlsExtension::SNI(sni) = extension {

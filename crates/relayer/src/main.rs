@@ -1,16 +1,19 @@
-use std::{process::exit, collections::HashMap, sync::Arc};
+use std::{collections::HashMap, process::exit, sync::Arc};
 
 use agent_listener::tcp::AgentTcpListener;
 use async_std::sync::RwLock;
 use futures::{select, FutureExt};
 use proxy_listener::http::ProxyHttpListener;
-use tracing_subscriber::{layer::SubscriberExt as _, fmt, EnvFilter, util::SubscriberInitExt};
+use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt, EnvFilter};
 
-use crate::{agent_listener::{AgentListener, AgentConnection}, proxy_listener::{ProxyListener, ProxyTunnel}};
+use crate::{
+    agent_listener::{AgentConnection, AgentListener},
+    proxy_listener::{ProxyListener, ProxyTunnel},
+};
 
-mod proxy_listener;
 mod agent_listener;
 mod agent_worker;
+mod proxy_listener;
 
 #[async_std::main]
 async fn main() {
@@ -18,10 +21,19 @@ async fn main() {
     if std::env::var("RUST_LOG").is_err() {
         std::env::set_var("RUST_LOG", "info");
     }
-    tracing_subscriber::registry().with(fmt::layer()).with(EnvFilter::from_default_env()).init();
-    let mut agent_listener = AgentTcpListener::new(3333).await.expect("Should listen agent port");
-    let mut proxy_http_listener = ProxyHttpListener::new(8080, false).await.expect("Should listen http port");
-    let mut proxy_tls_listener = ProxyHttpListener::new(8443, true).await.expect("Should listen tls port");
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::from_default_env())
+        .init();
+    let mut agent_listener = AgentTcpListener::new(3333)
+        .await
+        .expect("Should listen agent port");
+    let mut proxy_http_listener = ProxyHttpListener::new(8080, false)
+        .await
+        .expect("Should listen http port");
+    let mut proxy_tls_listener = ProxyHttpListener::new(8443, true)
+        .await
+        .expect("Should listen tls port");
     let agents = Arc::new(RwLock::new(HashMap::new()));
 
     loop {

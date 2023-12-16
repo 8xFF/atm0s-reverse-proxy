@@ -1,12 +1,15 @@
 use std::net::SocketAddr;
 
 use async_std::net::TcpStream;
-use futures::{AsyncReadExt, io::{ReadHalf, WriteHalf}};
+use futures::{
+    io::{ReadHalf, WriteHalf},
+    AsyncReadExt,
+};
 
 use super::LocalTunnel;
 
 pub struct LocalTcpTunnel {
-    stream: TcpStream
+    stream: TcpStream,
 }
 
 impl LocalTcpTunnel {
@@ -18,8 +21,7 @@ impl LocalTcpTunnel {
 }
 
 impl LocalTunnel<ReadHalf<TcpStream>, WriteHalf<TcpStream>> for LocalTcpTunnel {
-    fn split (self) -> (ReadHalf<TcpStream>, WriteHalf<TcpStream>) {
+    fn split(self) -> (ReadHalf<TcpStream>, WriteHalf<TcpStream>) {
         AsyncReadExt::split(self.stream)
     }
-    
 }

@@ -1,8 +1,11 @@
 use std::marker::PhantomData;
 
-use futures::{AsyncRead, AsyncWrite, select, FutureExt, AsyncWriteExt};
+use futures::{select, AsyncRead, AsyncWrite, AsyncWriteExt, FutureExt};
 
-use crate::{agent_listener::{AgentConnection, AgentSubConnection}, proxy_listener::ProxyTunnel};
+use crate::{
+    agent_listener::{AgentConnection, AgentSubConnection},
+    proxy_listener::ProxyTunnel,
+};
 
 pub struct AgentWorker<AG, S, R, W, PT, PR, PW>
 where
@@ -19,8 +22,9 @@ where
     rx: async_std::channel::Receiver<PT>,
 }
 
-impl<AG, S, R, W, PT, PR, PW>AgentWorker<AG, S, R, W, PT, PR, PW>
-where AG: AgentConnection<S, R, W>,
+impl<AG, S, R, W, PT, PR, PW> AgentWorker<AG, S, R, W, PT, PR, PW>
+where
+    AG: AgentConnection<S, R, W>,
     S: AgentSubConnection<R, W> + 'static,
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
@@ -30,11 +34,14 @@ where AG: AgentConnection<S, R, W>,
 {
     pub fn new(connection: AG) -> (Self, async_std::channel::Sender<PT>) {
         let (tx, rx) = async_std::channel::bounded(3);
-        (Self {
-            _tmp: PhantomData,
-            connection,
-            rx,
-        }, tx)
+        (
+            Self {
+                _tmp: PhantomData,
+                connection,
+                rx,
+            },
+            tx,
+        )
     }
 
     pub async fn run(&mut self) -> Option<()> {
