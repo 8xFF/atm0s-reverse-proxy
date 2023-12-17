@@ -1,3 +1,8 @@
+use std::alloc::System;
+
+#[global_allocator]
+static A: System = System;
+
 use std::net::SocketAddr;
 
 use async_std::io::WriteExt;

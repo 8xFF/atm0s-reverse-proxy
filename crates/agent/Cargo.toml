@@ -14,3 +14,9 @@ log = "0.4.20"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "std"] }
 yamux = "0.13.1"
 protocol = { path = "../protocol" }
+
+[profile.release]
+strip = true  # Automatically strip symbols from the binary.
+opt-level = "z"  # Optimize for size.
+lto = true
+codegen-units = 1
