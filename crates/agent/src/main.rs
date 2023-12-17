@@ -93,7 +93,7 @@ async fn main() {
             while let Some(sub_connection) = connection.recv().await {
                 let http_dest = args.http_dest;
                 let https_dest = args.https_dest;
-                async_std::task::spawn_local(async move {
+                async_std::task::spawn(async move {
                     log::info!("sub_connection pipe to local_tunnel start");
                     let (mut reader1, mut writer1) = sub_connection.split();
                     let mut first_pkt = [0u8; 4096];

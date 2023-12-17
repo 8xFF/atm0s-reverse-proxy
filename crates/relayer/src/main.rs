@@ -100,7 +100,7 @@ async fn main() {
                     let (mut agent_worker, proxy_tunnel_tx) = agent_worker::AgentWorker::new(agent_connection);
                     agents.write().await.insert(domain.clone(), proxy_tunnel_tx);
                     let agents = agents.clone();
-                    async_std::task::spawn_local(async move {
+                    async_std::task::spawn(async move {
                         increment_gauge!(METRICS_AGENT_LIVE, 1.0);
                         log::info!("agent_worker run for domain: {}", domain);
                         while let Some(_) = agent_worker.run().await {}

@@ -27,11 +27,11 @@ impl<AG, S, R, W, PT, PR, PW> AgentWorker<AG, S, R, W, PT, PR, PW>
 where
     AG: AgentConnection<S, R, W>,
     S: AgentSubConnection<R, W> + 'static,
-    R: AsyncRead + Unpin,
-    W: AsyncWrite + Unpin,
+    R: AsyncRead + Send + Unpin,
+    W: AsyncWrite + Send + Unpin,
     PT: ProxyTunnel<PR, PW> + 'static,
-    PR: AsyncRead + Unpin,
-    PW: AsyncWrite + Unpin,
+    PR: AsyncRead + Send + Unpin,
+    PW: AsyncWrite + Send + Unpin,
 {
     pub fn new(connection: AG) -> (Self, async_std::channel::Sender<PT>) {
         let (tx, rx) = async_std::channel::bounded(3);
@@ -54,7 +54,7 @@ where
             }
         };
         let sub_connection = self.connection.create_sub_connection().await?;
-        async_std::task::spawn_local(async move {
+        async_std::task::spawn(async move {
             increment_gauge!(crate::METRICS_PROXY_LIVE, 1.0);
             let domain = incoming.domain().to_string();
             log::info!("start proxy tunnel for domain {}", domain);
