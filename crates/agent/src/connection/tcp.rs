@@ -1,4 +1,5 @@
 use std::{
+    net::SocketAddr,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -6,6 +7,7 @@ use std::{
 use async_std::net::TcpStream;
 use futures::io::{ReadHalf, WriteHalf};
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Future};
+use protocol::{key::LocalKey, rpc::RegisterResponse};
 use yamux::Mode;
 
 use super::{Connection, SubConnection};
@@ -28,15 +30,33 @@ impl SubConnection<ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>> for TcpSub
 
 pub struct TcpConnection {
     conn: yamux::Connection<TcpStream>,
+    #[allow(unused)]
+    domain: String,
 }
 
 impl TcpConnection {
-    pub async fn new(dest: &str, domain: &str) -> Option<Self> {
+    pub async fn new(dest: SocketAddr, local_key: &LocalKey) -> Option<Self> {
         let mut stream = TcpStream::connect(dest).await.ok()?;
-        stream.write_all(domain.as_bytes()).await.ok()?; //TODO better way to authen domain
-        Some(Self {
-            conn: yamux::Connection::new(stream, Default::default(), Mode::Server),
-        })
+        let request = local_key.to_request();
+        let request_buf: Vec<u8> = (&request).into();
+        stream.write_all(&request_buf).await.ok()?;
+
+        let mut buf = [0u8; 4096];
+        let buf_len = stream.read(&mut buf).await.ok()?;
+        let response = RegisterResponse::try_from(&buf[..buf_len]).ok()?;
+        match response.response {
+            Ok(domain) => {
+                log::info!("registed domain {}", domain);
+                Some(Self {
+                    conn: yamux::Connection::new(stream, Default::default(), Mode::Server),
+                    domain,
+                })
+            }
+            Err(e) => {
+                log::error!("register response error {}", e);
+                return None;
+            }
+        }
     }
 }
 

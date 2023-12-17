@@ -7,23 +7,67 @@ use std::{
 use async_std::net::{TcpListener, TcpStream};
 use futures::{
     io::{ReadHalf, WriteHalf},
-    AsyncRead, AsyncReadExt, AsyncWrite, Future,
+    AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Future,
+};
+use protocol::{
+    key::validate_request,
+    rpc::{RegisterRequest, RegisterResponse},
 };
 
 use super::{AgentConnection, AgentListener, AgentSubConnection};
 
 pub struct AgentTcpListener {
     tcp_listener: TcpListener,
+    root_domain: String,
 }
 
 impl AgentTcpListener {
-    pub async fn new(port: u16) -> Option<Self> {
+    pub async fn new(port: u16, root_domain: String) -> Option<Self> {
         log::info!("AgentTcpListener::new {}", port);
         Some(Self {
             tcp_listener: TcpListener::bind(SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port))
                 .await
                 .ok()?,
+            root_domain,
         })
+    }
+
+    async fn process_incoming_stream(&self, mut stream: TcpStream) -> Option<AgentTcpConnection> {
+        let mut buf = [0u8; 4096];
+        let buf_len = stream.read(&mut buf).await.ok()?;
+
+        match RegisterRequest::try_from(&buf[..buf_len]) {
+            Ok(request) => {
+                let response = if let Some(sub_domain) = validate_request(&request) {
+                    log::info!("register request domain {}", sub_domain);
+                    Ok(format!("{}.{}", sub_domain, self.root_domain))
+                } else {
+                    log::error!("invalid register request {:?}", request);
+                    Err(String::from("invalid request"))
+                };
+
+                let res = RegisterResponse { response };
+                let res_buf: Vec<u8> = (&res).into();
+                if let Err(e) = stream.write_all(&res_buf).await {
+                    log::error!("register response error {:?}", e);
+                    return None;
+                }
+
+                let domain = res.response.ok()?;
+                Some(AgentTcpConnection {
+                    domain,
+                    connector: yamux::Connection::new(
+                        stream,
+                        Default::default(),
+                        yamux::Mode::Server,
+                    ),
+                })
+            }
+            Err(e) => {
+                log::error!("register request error {:?}", e);
+                None
+            }
+        }
     }
 }
 
@@ -37,16 +81,13 @@ impl
     > for AgentTcpListener
 {
     async fn recv(&mut self) -> Option<AgentTcpConnection> {
-        let (mut stream, remote) = self.tcp_listener.accept().await.ok()?;
-        log::info!("[AgentTcpListener] new conn from {}", remote);
-
-        let mut buf = [0u8; 4096];
-        let buf_len = stream.read(&mut buf).await.ok()?;
-
-        Some(AgentTcpConnection {
-            domain: String::from_utf8_lossy(&buf[..buf_len]).to_string(),
-            connector: yamux::Connection::new(stream, Default::default(), yamux::Mode::Client),
-        })
+        loop {
+            let (stream, remote) = self.tcp_listener.accept().await.ok()?;
+            log::info!("[AgentTcpListener] new conn from {}", remote);
+            if let Some(connection) = self.process_incoming_stream(stream).await {
+                return Some(connection);
+            }
+        }
     }
 }
 

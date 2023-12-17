@@ -1,3 +1,4 @@
+use clap::Parser;
 use std::{collections::HashMap, process::exit, sync::Arc};
 
 use agent_listener::tcp::AgentTcpListener;
@@ -15,8 +16,31 @@ mod agent_listener;
 mod agent_worker;
 mod proxy_listener;
 
+/// A HTTP and SNI HTTPs proxy for expose your local service to the internet.
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Http proxy port
+    #[arg(env, long, default_value_t = 80)]
+    http_port: u16,
+
+    /// Sni-https proxy port
+    #[arg(env, long, default_value_t = 443)]
+    https_port: u16,
+
+    /// Number of times to greet
+    #[arg(env, long, default_value_t = 33333)]
+    tcp_connector_port: u16,
+
+    /// Root domain
+    #[arg(env, long, default_value = "localtunnel.me")]
+    root_domain: String,
+}
+
 #[async_std::main]
 async fn main() {
+    let args = Args::parse();
+
     //if RUST_LOG env is not set, set it to info
     if std::env::var("RUST_LOG").is_err() {
         std::env::set_var("RUST_LOG", "info");
@@ -25,13 +49,13 @@ async fn main() {
         .with(fmt::layer())
         .with(EnvFilter::from_default_env())
         .init();
-    let mut agent_listener = AgentTcpListener::new(3333)
+    let mut agent_listener = AgentTcpListener::new(args.tcp_connector_port, args.root_domain)
         .await
         .expect("Should listen agent port");
-    let mut proxy_http_listener = ProxyHttpListener::new(8080, false)
+    let mut proxy_http_listener = ProxyHttpListener::new(args.http_port, false)
         .await
         .expect("Should listen http port");
-    let mut proxy_tls_listener = ProxyHttpListener::new(8443, true)
+    let mut proxy_tls_listener = ProxyHttpListener::new(args.https_port, true)
         .await
         .expect("Should listen tls port");
     let agents = Arc::new(RwLock::new(HashMap::new()));

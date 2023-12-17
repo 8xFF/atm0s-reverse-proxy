@@ -70,7 +70,10 @@ impl ProxyTunnel<ReadHalf<TcpStream>, WriteHalf<TcpStream>> for ProxyHttpTunnel 
             let mut req = httparse::Request::new(&mut headers);
             let _ = req.parse(&self.first_pkt[..self.first_pkt_size]).ok()?;
             let domain = req.headers.iter().find(|h| h.name == "Host")?.value;
-            self.domain = String::from_utf8_lossy(domain).to_string();
+            // dont get the port
+            let domain = String::from_utf8_lossy(domain).to_string();
+            let domain = domain.split(':').next()?;
+            self.domain = domain.to_string();
         }
         Some(())
     }
