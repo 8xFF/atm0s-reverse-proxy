@@ -46,7 +46,7 @@ impl TcpConnection {
         let response = RegisterResponse::try_from(&buf[..buf_len]).ok()?;
         match response.response {
             Ok(domain) => {
-                log::info!("registed domain {}", domain);
+                log::info!("registered domain {}", domain);
                 Some(Self {
                     conn: yamux::Connection::new(stream, Default::default(), Mode::Server),
                     domain,
