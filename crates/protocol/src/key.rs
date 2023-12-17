@@ -58,7 +58,7 @@ pub fn validate_request(req: &RegisterRequest) -> Option<String> {
     let msg = req.pub_key.to_bytes();
     req.pub_key.verify(&msg, &req.signature).ok()?;
     //convert pub_key to hex url
-    Some(convert_hex(&req.pub_key.to_bytes()))
+    Some(convert_hex(&req.pub_key.to_bytes()[0..16])) //TODO find better way to convert without loss data
 }
 
 fn convert_hex(buf: &[u8]) -> String {

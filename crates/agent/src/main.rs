@@ -54,14 +54,14 @@ async fn main() {
         .with(fmt::layer())
         .with(EnvFilter::from_default_env())
         .init();
-    
+
     //read local_key from file first, if not exist, create a new one and save to file
     let local_key = match std::fs::read_to_string(&args.local_key) {
         Ok(local_key) => match LocalKey::from_pem(&local_key) {
             Some(local_key) => {
                 log::info!("loadded local_key: \n{}", local_key.to_pem());
                 local_key
-            },
+            }
             None => {
                 log::error!("read local_key from file error: invalid pem");
                 return;
