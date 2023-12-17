@@ -87,25 +87,29 @@ impl ProxyTunnel<ReadHalf<TcpStream>, WriteHalf<TcpStream>> for ProxyHttpTunnel 
 }
 
 fn get_sni_from_packet(packet: &[u8]) -> Option<String> {
-    let res: Result<
-        (&[u8], tls_parser::TlsPlaintext),
-        tls_parser::Err<tls_parser::nom::error::Error<&[u8]>>,
-    > = parse_tls_plaintext(&packet);
-    if res.is_err() {
-        return None;
-    }
-    let tls_message: &tls_parser::TlsMessage = &res.unwrap().1.msg[0];
+    let res = match parse_tls_plaintext(&packet) {
+        Ok(res) => res,
+        Err(e) => {
+            log::error!("parse_tls_plaintext error {:?}", e);
+            return None;
+        }
+    };
+
+    let tls_message = &res.1.msg[0];
     if let tls_parser::TlsMessage::Handshake(handshake) = tls_message {
         if let tls_parser::TlsMessageHandshake::ClientHello(client_hello) = handshake {
             // get the extensions
-            let extensions: &[u8] = client_hello.ext.unwrap();
+            let extensions: &[u8] = client_hello.ext?;
             // parse the extensions
-            let res: Result<
-                (&[u8], Vec<tls_parser::TlsExtension>),
-                tls_parser::Err<tls_parser::nom::error::Error<&[u8]>>,
-            > = parse_tls_extensions(extensions);
+            let res = match parse_tls_extensions(extensions) {
+                Ok(res) => res,
+                Err(e) => {
+                    log::error!("parse_tls_extensions error {:?}", e);
+                    return None;
+                }
+            };
             // iterate over the extensions and find the SNI
-            for extension in res.unwrap().1 {
+            for extension in res.1 {
                 if let tls_parser::TlsExtension::SNI(sni) = extension {
                     // get the hostname
                     let hostname: &[u8] = sni[0].1;
