@@ -184,7 +184,7 @@ jobs:
         uses: marvinpinto/action-automatic-releases@latest
         with:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          automatic_release_tag: ${{ github.event_name == 'workflow_dispatch' && 'latest' || (github.ref == 'refs/heads/master' && 'latest') || github.ref }}
+          automatic_release_tag: ${{ github.event_name == 'workflow_dispatch' && 'latest' || (github.ref == 'refs/heads/main' && 'latest') || github.ref }}
           title: Build ${{ github.event_name == 'workflow_dispatch' && 'development' || github.ref }}
           files: |
             */*
