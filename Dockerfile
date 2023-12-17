@@ -13,8 +13,8 @@ RUN case $TARGETPLATFORM in \
     esac; \
     mv /tmp/$BUILD/agent-$BUILD /agent; \
     mv /tmp/$BUILD/relayer-$BUILD /relayer; \
-    chmod +x /agent \
-    chmod +x /relayer
+    chmod +x /agent; \
+    chmod +x /relayer;
 
 FROM ubuntu:22.04
 
