@@ -1,5 +1,7 @@
 use clap::Parser;
+#[cfg(feature = "expose-metrics")]
 use metrics_dashboard::build_dashboard_route;
+#[cfg(feature = "expose-metrics")]
 use poem::{listener::TcpListener, middleware::Tracing, EndpointExt as _, Route, Server};
 use std::{collections::HashMap, process::exit, sync::Arc};
 
@@ -74,6 +76,7 @@ async fn main() {
         .expect("Should listen tls port");
     let agents = Arc::new(RwLock::new(HashMap::new()));
 
+    #[cfg(feature = "expose-metrics")]
     let app = Route::new()
         .nest("/dashboard/", build_dashboard_route())
         .with(Tracing);
@@ -83,6 +86,7 @@ async fn main() {
     describe_counter!(METRICS_PROXY_COUNT, "Sum proxy connect count");
     describe_gauge!(METRICS_PROXY_LIVE, "Live proxy count");
 
+    #[cfg(feature = "expose-metrics")]
     async_std::task::spawn(async move {
         let _ = Server::new(TcpListener::bind("0.0.0.0:33334"))
             .name("hello-world")

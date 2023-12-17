@@ -14,6 +14,10 @@ tls-parser = "0.11.0"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "std"] }
 yamux = "0.13.1"
 protocol = { path = "../protocol" }
-metrics-dashboard = { version = "0.1.3", features = ["system"] }
-poem = { version = "1.3.59" }
-metrics = "0.21.1"
+metrics-dashboard = { version = "0.1.3", features = ["system"], optional = true }
+poem = { version = "1.3.59", optional = true }
+metrics = { version = "0.21.1" }
+
+[features]
+default = []
+expose-metrics = ["metrics-dashboard", "poem"]
