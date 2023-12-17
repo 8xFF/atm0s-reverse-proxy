@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-async-std = { version = "1.12.0", features = ["default", "attributes", "unstable"] }
+async-std = { version = "1.12.0", features = ["default", "attributes", "unstable", "tokio1"] }
 async-trait = "0.1.74"
 clap = { version = "4.4.11", features = ["derive", "env"] }
 futures = "0.3.4"
@@ -14,3 +14,6 @@ tls-parser = "0.11.0"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "std"] }
 yamux = "0.13.1"
 protocol = { path = "../protocol" }
+metrics-dashboard = { version = "0.1.3", features = ["system"] }
+poem = { version = "1.3.59" }
+metrics = "0.21.1"

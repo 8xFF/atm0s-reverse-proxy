@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
 use futures::{select, AsyncRead, AsyncWrite, AsyncWriteExt, FutureExt};
+use metrics::increment_gauge;
 
 use crate::{
     agent_listener::{AgentConnection, AgentSubConnection},
@@ -54,6 +55,7 @@ where
         };
         let sub_connection = self.connection.create_sub_connection().await?;
         async_std::task::spawn_local(async move {
+            increment_gauge!(crate::METRICS_PROXY_LIVE, 1.0);
             let domain = incoming.domain().to_string();
             log::info!("start proxy tunnel for domain {}", domain);
             let first_pkt = incoming.first_pkt();
@@ -77,6 +79,7 @@ where
             }
 
             log::info!("end proxy tunnel for domain {}", domain);
+            increment_gauge!(crate::METRICS_PROXY_LIVE, -1.0);
         });
         Some(())
     }

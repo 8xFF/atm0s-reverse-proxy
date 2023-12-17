@@ -1,11 +1,21 @@
 use clap::Parser;
+use metrics_dashboard::build_dashboard_route;
+use poem::{listener::TcpListener, middleware::Tracing, EndpointExt as _, Route, Server};
 use std::{collections::HashMap, process::exit, sync::Arc};
 
 use agent_listener::tcp::AgentTcpListener;
 use async_std::sync::RwLock;
 use futures::{select, FutureExt};
+use metrics::{
+    decrement_gauge, describe_counter, describe_gauge, increment_counter, increment_gauge,
+};
 use proxy_listener::http::ProxyHttpListener;
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt, EnvFilter};
+
+const METRICS_AGENT_COUNT: &str = "agent.count";
+const METRICS_AGENT_LIVE: &str = "agent.live";
+const METRICS_PROXY_COUNT: &str = "proxy.count";
+pub(crate) const METRICS_PROXY_LIVE: &str = "proxy.live";
 
 use crate::{
     agent_listener::{AgentConnection, AgentListener},
@@ -20,6 +30,10 @@ mod proxy_listener;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
+    /// API port
+    #[arg(env, long, default_value_t = 33334)]
+    api_port: u16,
+
     /// Http proxy port
     #[arg(env, long, default_value_t = 80)]
     http_port: u16,
@@ -60,20 +74,39 @@ async fn main() {
         .expect("Should listen tls port");
     let agents = Arc::new(RwLock::new(HashMap::new()));
 
+    let app = Route::new()
+        .nest("/dashboard/", build_dashboard_route())
+        .with(Tracing);
+
+    describe_counter!(METRICS_AGENT_COUNT, "Sum agent connect count");
+    describe_gauge!(METRICS_AGENT_LIVE, "Live agent count");
+    describe_counter!(METRICS_PROXY_COUNT, "Sum proxy connect count");
+    describe_gauge!(METRICS_PROXY_LIVE, "Live proxy count");
+
+    async_std::task::spawn(async move {
+        let _ = Server::new(TcpListener::bind("0.0.0.0:33334"))
+            .name("hello-world")
+            .run(app)
+            .await;
+    });
+
     loop {
         select! {
             e = agent_listener.recv().fuse() => match e {
                 Some(agent_connection) => {
+                    increment_counter!(METRICS_AGENT_COUNT);
                     log::info!("agent_connection.domain(): {}", agent_connection.domain());
                     let domain = agent_connection.domain().to_string();
                     let (mut agent_worker, proxy_tunnel_tx) = agent_worker::AgentWorker::new(agent_connection);
                     agents.write().await.insert(domain.clone(), proxy_tunnel_tx);
                     let agents = agents.clone();
                     async_std::task::spawn_local(async move {
+                        increment_gauge!(METRICS_AGENT_LIVE, 1.0);
                         log::info!("agent_worker run for domain: {}", domain);
                         while let Some(_) = agent_worker.run().await {}
                         agents.write().await.remove(&domain);
                         log::info!("agent_worker exit for domain: {}", domain);
+                        decrement_gauge!(METRICS_AGENT_LIVE, 1.0);
                     });
                 }
                 None => {
@@ -86,6 +119,7 @@ async fn main() {
                     if proxy_tunnel.wait().await.is_none() {
                         continue;
                     }
+                    increment_counter!(METRICS_PROXY_COUNT);
                     log::info!("proxy_tunnel.domain(): {}", proxy_tunnel.domain());
                     let domain = proxy_tunnel.domain().to_string();
                     if let Some(agent_tx) = agents.read().await.get(&domain) {
