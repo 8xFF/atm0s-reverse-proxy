@@ -59,7 +59,7 @@ impl AgentTcpListener {
                     connector: yamux::Connection::new(
                         stream,
                         Default::default(),
-                        yamux::Mode::Server,
+                        yamux::Mode::Client,
                     ),
                 })
             }
