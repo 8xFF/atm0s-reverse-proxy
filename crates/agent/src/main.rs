@@ -25,7 +25,7 @@ mod local_tunnel;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Number of times to greet
+    /// Address of relay server
     #[arg(env, long, long, default_value = "127.0.0.1:33333")]
     tcp_connector_addr: SocketAddr,
 
