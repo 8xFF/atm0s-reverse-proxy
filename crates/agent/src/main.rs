@@ -105,8 +105,10 @@ async fn main() {
                                 return;
                             }
                             if first_pkt[0] == 0x16 {
+                                log::info!("create tunnel to https dest {}", https_dest);
                                 (LocalTcpTunnel::new(https_dest).await, first_pkt_len)
                             } else {
+                                log::info!("create tunnel to http dest {}", http_dest);
                                 (LocalTcpTunnel::new(http_dest).await, first_pkt_len)
                             }
                         }
