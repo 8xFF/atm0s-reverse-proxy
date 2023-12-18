@@ -3,10 +3,10 @@ use clap::Parser;
 use metrics_dashboard::build_dashboard_route;
 #[cfg(feature = "expose-metrics")]
 use poem::{listener::TcpListener, middleware::Tracing, EndpointExt as _, Route, Server};
-use std::{collections::HashMap, net::SocketAddr, process::exit, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, process::exit, sync::Arc, time::Duration};
 
 use agent_listener::quic::AgentQuicListener;
-use async_std::sync::RwLock;
+use async_std::{sync::RwLock, prelude::FutureExt as _};
 use futures::{select, FutureExt};
 use metrics::{
     decrement_gauge, describe_counter, describe_gauge, increment_counter, increment_gauge,
@@ -129,8 +129,16 @@ async fn main() {
                 Some(mut proxy_tunnel) => {
                     let agents = agents.clone();
                     async_std::task::spawn(async move {
-                        if proxy_tunnel.wait().await.is_none() {
-                            return;
+                        match proxy_tunnel.wait().timeout(Duration::from_secs(5)).await {
+                            Err(_) => {
+                                log::error!("proxy_tunnel.wait() for checking url timeout");
+                                return;
+                            },
+                            Ok(None) => {
+                                log::error!("proxy_tunnel.wait() for checking url invalid");
+                                return;
+                            },
+                            _ => {}
                         }
                         increment_counter!(METRICS_PROXY_COUNT);
                         log::info!("proxy_tunnel.domain(): {}", proxy_tunnel.domain());
