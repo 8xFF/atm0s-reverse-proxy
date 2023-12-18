@@ -25,10 +25,16 @@ impl AgentQuicListener {
         }
     }
 
-    async fn process_incoming_conn(&self, conn: quinn::Connection) -> Result<AgentQuicConnection, Box<dyn Error>> {
+    async fn process_incoming_conn(
+        &self,
+        conn: quinn::Connection,
+    ) -> Result<AgentQuicConnection, Box<dyn Error>> {
         let (mut send, mut recv) = conn.accept_bi().await?;
         let mut buf = [0u8; 4096];
-        let buf_len = recv.read(&mut buf).await?.ok_or::<Box<dyn Error>>("No incomming data".into())?;
+        let buf_len = recv
+            .read(&mut buf)
+            .await?
+            .ok_or::<Box<dyn Error>>("No incomming data".into())?;
 
         match RegisterRequest::try_from(&buf[..buf_len]) {
             Ok(request) => {
@@ -61,7 +67,11 @@ impl AgentListener<AgentQuicConnection, AgentQuicSubConnection, RecvStream, Send
 {
     async fn recv(&mut self) -> Result<AgentQuicConnection, Box<dyn Error>> {
         loop {
-            let incoming_conn = self.endpoint.accept().await.ok_or::<Box<dyn Error>>("Cannot accept".into())?;
+            let incoming_conn = self
+                .endpoint
+                .accept()
+                .await
+                .ok_or::<Box<dyn Error>>("Cannot accept".into())?;
             let conn: quinn::Connection = incoming_conn.await?;
             log::info!(
                 "[AgentQuicListener] new conn from {}",

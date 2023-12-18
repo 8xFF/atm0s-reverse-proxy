@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, error::Error};
+use std::{error::Error, marker::PhantomData};
 
 use futures::{select, AsyncRead, AsyncWrite, FutureExt};
 use metrics::increment_gauge;

@@ -1,7 +1,8 @@
 use std::{
+    error::Error,
     net::SocketAddr,
     pin::Pin,
-    task::{Context, Poll}, error::Error,
+    task::{Context, Poll},
 };
 
 use async_std::net::{TcpListener, TcpStream};
@@ -25,13 +26,15 @@ impl AgentTcpListener {
     pub async fn new(addr: SocketAddr, root_domain: String) -> Self {
         log::info!("AgentTcpListener::new {}", addr);
         Self {
-            tcp_listener: TcpListener::bind(addr)
-                .await.expect("Should open"),
+            tcp_listener: TcpListener::bind(addr).await.expect("Should open"),
             root_domain,
         }
     }
 
-    async fn process_incoming_stream(&self, mut stream: TcpStream) -> Result<AgentTcpConnection, Box<dyn Error>> {
+    async fn process_incoming_stream(
+        &self,
+        mut stream: TcpStream,
+    ) -> Result<AgentTcpConnection, Box<dyn Error>> {
         let mut buf = [0u8; 4096];
         let buf_len = stream.read(&mut buf).await?;
 
@@ -174,7 +177,9 @@ where
         match this.connection.poll_next_inbound(cx) {
             Poll::Ready(Some(Ok(stream))) => return Poll::Ready(Ok(())),
             Poll::Ready(Some(Err(e))) => return Poll::Ready(Err(e.into())),
-            Poll::Ready(None) => return Poll::Ready(Err("yamux server poll next inbound return None".into())),
+            Poll::Ready(None) => {
+                return Poll::Ready(Err("yamux server poll next inbound return None".into()))
+            }
             Poll::Pending => Poll::Pending,
         }
     }
