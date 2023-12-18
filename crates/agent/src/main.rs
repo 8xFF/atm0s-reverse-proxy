@@ -100,7 +100,7 @@ async fn main() {
                             args.http_dest,
                             args.https_dest,
                         ));
-                    },
+                    }
                     Err(e) => {
                         log::error!("recv sub_connection error: {}", e);
                         break;
@@ -114,8 +114,11 @@ async fn main() {
     }
 }
 
-
-async fn run_connection(sub_connection: QuicSubConnection, http_dest: SocketAddr, https_dest: SocketAddr) {
+async fn run_connection(
+    sub_connection: QuicSubConnection,
+    http_dest: SocketAddr,
+    https_dest: SocketAddr,
+) {
     log::info!("sub_connection pipe to local_tunnel start");
     let (mut reader1, mut writer1) = sub_connection.split();
     let mut first_pkt = [0u8; 4096];

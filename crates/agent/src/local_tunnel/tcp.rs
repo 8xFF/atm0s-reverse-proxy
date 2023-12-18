@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, error::Error};
+use std::{error::Error, net::SocketAddr};
 
 use async_std::net::TcpStream;
 use futures::{

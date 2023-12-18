@@ -27,10 +27,10 @@ impl AgentQuicListener {
         }
     }
 
-    async fn process_incoming_conn(&self, conn: quinn::Connection) -> Option<AgentQuicConnection> {
-        let (mut send, mut recv) = conn.accept_bi().await.ok()?;
+    async fn process_incoming_conn(&self, conn: quinn::Connection) -> Result<AgentQuicConnection, Box<dyn Error>> {
+        let (mut send, mut recv) = conn.accept_bi().await?;
         let mut buf = [0u8; 4096];
-        let buf_len = recv.read(&mut buf).await.ok()??;
+        let buf_len = recv.read(&mut buf).await?.ok_or::<Box<dyn Error>>("No incomming data".into())?;
 
         match RegisterRequest::try_from(&buf[..buf_len]) {
             Ok(request) => {
@@ -44,17 +44,14 @@ impl AgentQuicListener {
 
                 let res = RegisterResponse { response };
                 let res_buf: Vec<u8> = (&res).into();
-                if let Err(e) = send.write_all(&res_buf).await {
-                    log::error!("register response error {:?}", e);
-                    return None;
-                }
+                send.write_all(&res_buf).await?;
 
-                let domain = res.response.ok()?;
-                Some(AgentQuicConnection { domain, conn })
+                let domain = res.response?;
+                Ok(AgentQuicConnection { domain, conn })
             }
             Err(e) => {
                 log::error!("register request error {:?}", e);
-                None
+                Err(e.into())
             }
         }
     }
@@ -64,16 +61,22 @@ impl AgentQuicListener {
 impl AgentListener<AgentQuicConnection, AgentQuicSubConnection, RecvStream, SendStream>
     for AgentQuicListener
 {
-    async fn recv(&mut self) -> Option<AgentQuicConnection> {
+    async fn recv(&mut self) -> Result<AgentQuicConnection, Box<dyn Error>> {
         loop {
-            let incoming_conn = self.endpoint.accept().await?;
-            let conn: quinn::Connection = incoming_conn.await.ok()?;
+            let incoming_conn = self.endpoint.accept().await.ok_or::<Box<dyn Error>>("Cannot accept".into())?;
+            let conn: quinn::Connection = incoming_conn.await?;
             log::info!(
                 "[AgentQuicListener] new conn from {}",
                 conn.remote_address()
             );
-            if let Some(connection) = self.process_incoming_conn(conn).await {
-                return Some(connection);
+            match self.process_incoming_conn(conn).await {
+                Ok(connection) => {
+                    log::info!("new connection {}", connection.domain());
+                    return Ok(connection);
+                }
+                Err(e) => {
+                    log::error!("process_incoming_conn error: {}", e);
+                }
             }
         }
     }
@@ -90,14 +93,14 @@ impl AgentConnection<AgentQuicSubConnection, RecvStream, SendStream> for AgentQu
         self.domain.clone()
     }
 
-    async fn create_sub_connection(&mut self) -> Option<AgentQuicSubConnection> {
-        let (send, recv) = self.conn.open_bi().await.ok()?;
-        Some(AgentQuicSubConnection { send, recv })
+    async fn create_sub_connection(&mut self) -> Result<AgentQuicSubConnection, Box<dyn Error>> {
+        let (send, recv) = self.conn.open_bi().await?;
+        Ok(AgentQuicSubConnection { send, recv })
     }
 
-    async fn recv(&mut self) -> Option<()> {
-        self.conn.read_datagram().await.ok()?;
-        Some(())
+    async fn recv(&mut self) -> Result<(), Box<dyn Error>> {
+        self.conn.read_datagram().await?;
+        Ok(())
     }
 }
 

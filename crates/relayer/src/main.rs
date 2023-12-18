@@ -96,7 +96,7 @@ async fn main() {
     loop {
         select! {
             e = agent_listener.recv().fuse() => match e {
-                Some(agent_connection) => {
+                Ok(agent_connection) => {
                     increment_counter!(METRICS_AGENT_COUNT);
                     log::info!("agent_connection.domain(): {}", agent_connection.domain());
                     let domain = agent_connection.domain().to_string();
@@ -106,14 +106,22 @@ async fn main() {
                     async_std::task::spawn(async move {
                         increment_gauge!(METRICS_AGENT_LIVE, 1.0);
                         log::info!("agent_worker run for domain: {}", domain);
-                        while let Some(_) = agent_worker.run().await {}
+                        loop {
+                            match agent_worker.run().await {
+                                Ok(()) => {}
+                                Err(e) => {
+                                    log::error!("agent_worker error: {}", e);
+                                    break;
+                                }
+                            }
+                        }
                         agents.write().await.remove(&domain);
                         log::info!("agent_worker exit for domain: {}", domain);
                         decrement_gauge!(METRICS_AGENT_LIVE, 1.0);
                     });
                 }
-                None => {
-                    log::error!("agent_listener error");
+                Err(e) => {
+                    log::error!("agent_listener error {}", e);
                     exit(1);
                 }
             },

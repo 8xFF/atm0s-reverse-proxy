@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, error::Error};
 
 use futures::{select, AsyncRead, AsyncWrite, FutureExt};
 use metrics::increment_gauge;
@@ -45,12 +45,12 @@ where
         )
     }
 
-    pub async fn run(&mut self) -> Option<()> {
+    pub async fn run(&mut self) -> Result<(), Box<dyn Error>> {
         let incoming = select! {
-            incoming = self.rx.recv().fuse() => incoming.ok()?,
+            incoming = self.rx.recv().fuse() => incoming?,
             e = self.connection.recv().fuse() => {
                 e?;
-                return Some(());
+                return Ok(());
             }
         };
         let sub_connection = self.connection.create_sub_connection().await?;
@@ -65,13 +65,21 @@ where
             let job2 = futures::io::copy(&mut reader2, &mut writer1);
 
             select! {
-                _ = job1.fuse() => {}
-                _ = job2.fuse() => {}
+                e = job1.fuse() => {
+                    if let Err(e) = e {
+                        log::info!("agent => proxy error: {}", e);
+                    }
+                }
+                e = job2.fuse() => {
+                    if let Err(e) = e {
+                        log::info!("proxy => agent error: {}", e);
+                    }
+                }
             }
 
             log::info!("end proxy tunnel for domain {}", domain);
             increment_gauge!(crate::METRICS_PROXY_LIVE, -1.0);
         });
-        Some(())
+        Ok(())
     }
 }

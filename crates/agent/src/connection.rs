@@ -4,8 +4,8 @@ use std::error::Error;
 
 use futures::{AsyncRead, AsyncWrite};
 
-pub mod tcp;
 pub mod quic;
+pub mod tcp;
 
 pub trait SubConnection<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>: Send + Sync {
     fn split(self) -> (R, W);

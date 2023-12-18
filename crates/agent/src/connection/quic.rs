@@ -1,9 +1,9 @@
-use std::time::Duration;
-use std::{net::SocketAddr, error::Error};
 use std::sync::Arc;
+use std::time::Duration;
+use std::{error::Error, net::SocketAddr};
 
 use protocol::{key::LocalKey, rpc::RegisterResponse};
-use quinn::{Endpoint, ClientConfig, SendStream, RecvStream, TransportConfig};
+use quinn::{ClientConfig, Endpoint, RecvStream, SendStream, TransportConfig};
 
 use super::{Connection, SubConnection};
 
@@ -30,9 +30,7 @@ impl QuicConnection {
         endpoint.set_default_client_config(configure_client());
 
         // connect to server
-        let connection = endpoint
-            .connect(dest, "localhost")?
-            .await?;
+        let connection = endpoint.connect(dest, "localhost")?.await?;
 
         log::info!("connected to {}, open bi stream", dest);
         let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
@@ -43,15 +41,15 @@ impl QuicConnection {
         send_stream.write_all(&request_buf).await?;
 
         let mut buf = [0u8; 4096];
-        let buf_len = recv_stream.read(&mut buf).await?.ok_or::<Box<dyn Error>>("read register response error".into())?;
+        let buf_len = recv_stream
+            .read(&mut buf)
+            .await?
+            .ok_or::<Box<dyn Error>>("read register response error".into())?;
         let response = RegisterResponse::try_from(&buf[..buf_len])?;
         match response.response {
             Ok(domain) => {
                 log::info!("registed domain {}", domain);
-                Ok(Self {
-                    connection,
-                    domain,
-                })
+                Ok(Self { connection, domain })
             }
             Err(e) => {
                 log::error!("register response error {}", e);
@@ -62,9 +60,7 @@ impl QuicConnection {
 }
 
 #[async_trait::async_trait]
-impl Connection<QuicSubConnection, RecvStream, SendStream>
-    for QuicConnection
-{
+impl Connection<QuicSubConnection, RecvStream, SendStream> for QuicConnection {
     async fn recv(&mut self) -> Result<QuicSubConnection, Box<dyn Error>> {
         let (send, recv) = self.connection.accept_bi().await?;
         Ok(QuicSubConnection { send, recv })
