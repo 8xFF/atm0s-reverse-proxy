@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{error::Error, net::SocketAddr};
 
 use async_std::net::TcpStream;
 use futures::{
@@ -13,9 +13,9 @@ pub struct LocalTcpTunnel {
 }
 
 impl LocalTcpTunnel {
-    pub async fn new(dest: SocketAddr) -> Option<Self> {
-        Some(Self {
-            stream: TcpStream::connect(dest).await.ok()?,
+    pub async fn new(dest: SocketAddr) -> Result<Self, Box<dyn Error>> {
+        Ok(Self {
+            stream: TcpStream::connect(dest).await?,
         })
     }
 }

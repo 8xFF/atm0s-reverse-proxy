@@ -35,10 +35,10 @@ jobs:
           - linux musl aarch64
           - linux gnueabihf arm
           - linux gnueabihf armv7
-          - linux gnu mips
-          - linux gnuabi64 mips64
-          - linux gnuabi64 mips64el
-          - linux gnu mipsel
+          # - linux gnu mips
+          # - linux gnuabi64 mips64
+          # - linux gnuabi64 mips64el
+          # - linux gnu mipsel
           - macos x64
           - macos aarch64
         include:
@@ -72,26 +72,26 @@ jobs:
             rust: stable
             target: armv7-unknown-linux-gnueabihf
             cross: true
-          - build: linux gnu mips
-            os: ubuntu-latest
-            rust: 1.71.1
-            target: mips-unknown-linux-gnu
-            cross: true
-          - build: linux gnuabi64 mips64
-            os: ubuntu-latest
-            rust: 1.71.1
-            target: mips64-unknown-linux-gnuabi64
-            cross: true
-          - build: linux gnuabi64 mips64el
-            os: ubuntu-latest
-            rust: 1.71.1
-            target: mips64el-unknown-linux-gnuabi64
-            cross: true
-          - build: linux gnu mipsel
-            os: ubuntu-latest
-            rust: 1.71.1
-            target: mipsel-unknown-linux-gnu
-            cross: true
+          # - build: linux gnu mips
+          #   os: ubuntu-latest
+          #   rust: 1.71.1
+          #   target: mips-unknown-linux-gnu
+          #   cross: true
+          # - build: linux gnuabi64 mips64
+          #   os: ubuntu-latest
+          #   rust: 1.71.1
+          #   target: mips64-unknown-linux-gnuabi64
+          #   cross: true
+          # - build: linux gnuabi64 mips64el
+          #   os: ubuntu-latest
+          #   rust: 1.71.1
+          #   target: mips64el-unknown-linux-gnuabi64
+          #   cross: true
+          # - build: linux gnu mipsel
+          #   os: ubuntu-latest
+          #   rust: 1.71.1
+          #   target: mipsel-unknown-linux-gnu
+          #   cross: true
           - build: linux musl aarch64
             os: ubuntu-latest
             rust: stable

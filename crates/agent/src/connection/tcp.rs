@@ -1,4 +1,5 @@
 use std::{
+    error::Error,
     net::SocketAddr,
     pin::Pin,
     task::{Context, Poll},
@@ -35,26 +36,26 @@ pub struct TcpConnection {
 }
 
 impl TcpConnection {
-    pub async fn new(dest: SocketAddr, local_key: &LocalKey) -> Option<Self> {
-        let mut stream = TcpStream::connect(dest).await.ok()?;
+    pub async fn new(dest: SocketAddr, local_key: &LocalKey) -> Result<Self, Box<dyn Error>> {
+        let mut stream = TcpStream::connect(dest).await?;
         let request = local_key.to_request();
         let request_buf: Vec<u8> = (&request).into();
-        stream.write_all(&request_buf).await.ok()?;
+        stream.write_all(&request_buf).await?;
 
         let mut buf = [0u8; 4096];
-        let buf_len = stream.read(&mut buf).await.ok()?;
-        let response = RegisterResponse::try_from(&buf[..buf_len]).ok()?;
+        let buf_len = stream.read(&mut buf).await?;
+        let response = RegisterResponse::try_from(&buf[..buf_len])?;
         match response.response {
             Ok(domain) => {
-                log::info!("registered domain {}", domain);
-                Some(Self {
+                log::info!("registed domain {}", domain);
+                Ok(Self {
                     conn: yamux::Connection::new(stream, Default::default(), Mode::Server),
                     domain,
                 })
             }
             Err(e) => {
                 log::error!("register response error {}", e);
-                return None;
+                return Err(e.into());
             }
         }
     }
@@ -64,11 +65,12 @@ impl TcpConnection {
 impl Connection<TcpSubConnection, ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>>
     for TcpConnection
 {
-    async fn recv(&mut self) -> Option<TcpSubConnection> {
+    async fn recv(&mut self) -> Result<TcpSubConnection, Box<dyn Error>> {
         let mux_server = YamuxConnectionServer::new(&mut self.conn);
         match mux_server.await {
-            Ok(Some(stream)) => Some(TcpSubConnection::new(stream)),
-            _ => None,
+            Ok(Some(stream)) => Ok(TcpSubConnection::new(stream)),
+            Ok(None) => Err("yamux server poll next inbound return None".into()),
+            Err(e) => Err(e.into()),
         }
     }
 }

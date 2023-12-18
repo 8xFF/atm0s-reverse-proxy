@@ -14,6 +14,8 @@ log = "0.4.20"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "std"] }
 yamux = "0.13.1"
 protocol = { path = "../protocol" }
+quinn = { version = "0.10.2", default-features = false, features = ["native-certs", "tls-rustls", "log", "runtime-async-std", "futures-io", "ring"] }
+rustls = { version = "0.21.0", default-features = false, features = ["quic", "dangerous_configuration"] }
 
 [profile.release]
 strip = true  # Automatically strip symbols from the binary.
