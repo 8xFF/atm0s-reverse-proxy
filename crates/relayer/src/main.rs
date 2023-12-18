@@ -3,9 +3,9 @@ use clap::Parser;
 use metrics_dashboard::build_dashboard_route;
 #[cfg(feature = "expose-metrics")]
 use poem::{listener::TcpListener, middleware::Tracing, EndpointExt as _, Route, Server};
-use std::{collections::HashMap, process::exit, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, process::exit, sync::Arc};
 
-use agent_listener::tcp::AgentTcpListener;
+use agent_listener::quic::AgentQuicListener;
 use async_std::sync::RwLock;
 use futures::{select, FutureExt};
 use metrics::{
@@ -45,8 +45,8 @@ struct Args {
     https_port: u16,
 
     /// Number of times to greet
-    #[arg(env, long, default_value_t = 33333)]
-    tcp_connector_port: u16,
+    #[arg(env, long, default_value = "0.0.0.0:33333")]
+    quic_connector_port: SocketAddr,
 
     /// Root domain
     #[arg(env, long, default_value = "localtunnel.me")]
@@ -65,9 +65,8 @@ async fn main() {
         .with(fmt::layer())
         .with(EnvFilter::from_default_env())
         .init();
-    let mut agent_listener = AgentTcpListener::new(args.tcp_connector_port, args.root_domain)
-        .await
-        .expect("Should listen agent port");
+    let mut agent_listener =
+        AgentQuicListener::new(args.quic_connector_port, args.root_domain).await;
     let mut proxy_http_listener = ProxyHttpListener::new(args.http_port, false)
         .await
         .expect("Should listen http port");
@@ -120,17 +119,20 @@ async fn main() {
             },
             e = proxy_http_listener.recv().fuse() => match e {
                 Some(mut proxy_tunnel) => {
-                    if proxy_tunnel.wait().await.is_none() {
-                        continue;
-                    }
-                    increment_counter!(METRICS_PROXY_COUNT);
-                    log::info!("proxy_tunnel.domain(): {}", proxy_tunnel.domain());
-                    let domain = proxy_tunnel.domain().to_string();
-                    if let Some(agent_tx) = agents.read().await.get(&domain) {
-                        agent_tx.send(proxy_tunnel).await.ok();
-                    } else {
-                        log::warn!("agent not found for domain: {}", domain);
-                    }
+                    let agents = agents.clone();
+                    async_std::task::spawn(async move {
+                        if proxy_tunnel.wait().await.is_none() {
+                            return;
+                        }
+                        increment_counter!(METRICS_PROXY_COUNT);
+                        log::info!("proxy_tunnel.domain(): {}", proxy_tunnel.domain());
+                        let domain = proxy_tunnel.domain().to_string();
+                        if let Some(agent_tx) = agents.read().await.get(&domain) {
+                            agent_tx.send(proxy_tunnel).await.ok();
+                        } else {
+                            log::warn!("agent not found for domain: {}", domain);
+                        }
+                    });
                 }
                 None => {
                     log::error!("proxy_http_listener.recv()");

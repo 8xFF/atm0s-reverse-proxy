@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use futures::{select, AsyncRead, AsyncWrite, AsyncWriteExt, FutureExt};
+use futures::{select, AsyncRead, AsyncWrite, FutureExt};
 use metrics::increment_gauge;
 
 use crate::{
@@ -58,24 +58,15 @@ where
             increment_gauge!(crate::METRICS_PROXY_LIVE, 1.0);
             let domain = incoming.domain().to_string();
             log::info!("start proxy tunnel for domain {}", domain);
-            let first_pkt = incoming.first_pkt();
             let (mut reader1, mut writer1) = sub_connection.split();
-            let success = if first_pkt.len() > 0 {
-                writer1.write_all(first_pkt).await.is_ok()
-            } else {
-                true
-            };
+            let (mut reader2, mut writer2) = incoming.split();
 
-            if success {
-                let (mut reader2, mut writer2) = incoming.split();
+            let job1 = futures::io::copy(&mut reader1, &mut writer2);
+            let job2 = futures::io::copy(&mut reader2, &mut writer1);
 
-                let job1 = futures::io::copy(&mut reader1, &mut writer2);
-                let job2 = futures::io::copy(&mut reader2, &mut writer1);
-
-                select! {
-                    _ = job1.fuse() => {}
-                    _ = job2.fuse() => {}
-                }
+            select! {
+                _ = job1.fuse() => {}
+                _ = job2.fuse() => {}
             }
 
             log::info!("end proxy tunnel for domain {}", domain);

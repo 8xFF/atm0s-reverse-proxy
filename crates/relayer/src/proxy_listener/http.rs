@@ -34,8 +34,6 @@ impl ProxyListener<ProxyHttpTunnel, ReadHalf<TcpStream>, WriteHalf<TcpStream>>
         let (stream, remote) = self.tcp_listener.accept().await.ok()?;
         log::info!("[ProxyHttpListener] new conn from {}", remote);
         Some(ProxyHttpTunnel {
-            first_pkt: vec![0u8; 4096],
-            first_pkt_size: 0,
             domain: "demo".to_string(),
             stream,
             tls: self.tls,
@@ -44,8 +42,6 @@ impl ProxyListener<ProxyHttpTunnel, ReadHalf<TcpStream>, WriteHalf<TcpStream>>
 }
 
 pub struct ProxyHttpTunnel {
-    first_pkt: Vec<u8>,
-    first_pkt_size: usize,
     domain: String,
     stream: TcpStream,
     tls: bool,
@@ -53,22 +49,20 @@ pub struct ProxyHttpTunnel {
 
 #[async_trait::async_trait]
 impl ProxyTunnel<ReadHalf<TcpStream>, WriteHalf<TcpStream>> for ProxyHttpTunnel {
-    fn first_pkt(&self) -> &[u8] {
-        &self.first_pkt[..self.first_pkt_size]
-    }
-
     async fn wait(&mut self) -> Option<()> {
-        self.first_pkt_size = self.stream.read(&mut self.first_pkt).await.ok()?;
+        log::info!("[ProxyHttpTunnel] wait first data for checking url...");
+        let mut first_pkt = [0u8; 4096];
+        let first_pkt_size = self.stream.peek(&mut first_pkt).await.ok()?;
         log::info!(
             "[ProxyHttpTunnel] read {} bytes for determine url",
-            self.first_pkt_size
+            first_pkt_size
         );
         if self.tls {
-            self.domain = get_sni_from_packet(&self.first_pkt[..self.first_pkt_size])?;
+            self.domain = get_sni_from_packet(&first_pkt[..first_pkt_size])?;
         } else {
             let mut headers = [httparse::EMPTY_HEADER; 64];
             let mut req = httparse::Request::new(&mut headers);
-            let _ = req.parse(&self.first_pkt[..self.first_pkt_size]).ok()?;
+            let _ = req.parse(&first_pkt[..first_pkt_size]).ok()?;
             let domain = req.headers.iter().find(|h| h.name == "Host")?.value;
             // dont get the port
             let domain = String::from_utf8_lossy(domain).to_string();

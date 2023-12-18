@@ -2,6 +2,7 @@
 
 use futures::{AsyncRead, AsyncWrite};
 
+pub mod quic;
 pub mod tcp;
 
 pub trait AgentSubConnection<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>: Send + Sync {
