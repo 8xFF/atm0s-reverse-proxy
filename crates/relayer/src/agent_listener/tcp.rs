@@ -1,5 +1,5 @@
 use std::{
-    net::{Ipv4Addr, SocketAddr},
+    net::SocketAddr,
     pin::Pin,
     task::{Context, Poll}, error::Error,
 };
@@ -22,14 +22,13 @@ pub struct AgentTcpListener {
 }
 
 impl AgentTcpListener {
-    pub async fn new(port: u16, root_domain: String) -> Option<Self> {
-        log::info!("AgentTcpListener::new {}", port);
-        Some(Self {
-            tcp_listener: TcpListener::bind(SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port))
-                .await
-                .ok()?,
+    pub async fn new(addr: SocketAddr, root_domain: String) -> Self {
+        log::info!("AgentTcpListener::new {}", addr);
+        Self {
+            tcp_listener: TcpListener::bind(addr)
+                .await.expect("Should open"),
             root_domain,
-        })
+        }
     }
 
     async fn process_incoming_stream(&self, mut stream: TcpStream) -> Result<AgentTcpConnection, Box<dyn Error>> {

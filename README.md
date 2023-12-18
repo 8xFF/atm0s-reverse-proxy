@@ -32,7 +32,13 @@ To get started with the Decentralized HomeAssistant Proxy, follow these steps:
 3. Run the server:
 
     ```shell
-    cargo run --release
+    cargo run -- --root-domain local.ha.8xff.io
+    ```
+
+4. Run the client:
+
+    ```shell
+    cargo run --release -- --connector-addr 127.0.0.1:33333 --connector-protocol quic --http-dest 127.0.0.1:18080 --https-dest 127.0.0.1:18443
     ```
 
 ## Contributing

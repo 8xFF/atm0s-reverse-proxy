@@ -6,6 +6,7 @@ use poem::{listener::TcpListener, middleware::Tracing, EndpointExt as _, Route, 
 use std::{collections::HashMap, net::SocketAddr, process::exit, sync::Arc, time::Duration};
 
 use agent_listener::quic::AgentQuicListener;
+use agent_listener::tcp::AgentTcpListener;
 use async_std::{sync::RwLock, prelude::FutureExt as _};
 use futures::{select, FutureExt};
 use metrics::{
@@ -46,7 +47,7 @@ struct Args {
 
     /// Number of times to greet
     #[arg(env, long, default_value = "0.0.0.0:33333")]
-    quic_connector_port: SocketAddr,
+    connector_port: SocketAddr,
 
     /// Root domain
     #[arg(env, long, default_value = "localtunnel.me")]
@@ -65,8 +66,10 @@ async fn main() {
         .with(fmt::layer())
         .with(EnvFilter::from_default_env())
         .init();
-    let mut agent_listener =
-        AgentQuicListener::new(args.quic_connector_port, args.root_domain).await;
+    let mut quic_agent_listener =
+        AgentQuicListener::new(args.connector_port, args.root_domain.clone()).await;
+    let mut tcp_agent_listener =
+        AgentTcpListener::new(args.connector_port, args.root_domain).await;
     let mut proxy_http_listener = ProxyHttpListener::new(args.http_port, false)
         .await
         .expect("Should listen http port");
@@ -95,7 +98,37 @@ async fn main() {
 
     loop {
         select! {
-            e = agent_listener.recv().fuse() => match e {
+            e = quic_agent_listener.recv().fuse() => match e {
+                Ok(agent_connection) => {
+                    increment_counter!(METRICS_AGENT_COUNT);
+                    log::info!("agent_connection.domain(): {}", agent_connection.domain());
+                    let domain = agent_connection.domain().to_string();
+                    let (mut agent_worker, proxy_tunnel_tx) = agent_worker::AgentWorker::new(agent_connection);
+                    agents.write().await.insert(domain.clone(), proxy_tunnel_tx);
+                    let agents = agents.clone();
+                    async_std::task::spawn(async move {
+                        increment_gauge!(METRICS_AGENT_LIVE, 1.0);
+                        log::info!("agent_worker run for domain: {}", domain);
+                        loop {
+                            match agent_worker.run().await {
+                                Ok(()) => {}
+                                Err(e) => {
+                                    log::error!("agent_worker error: {}", e);
+                                    break;
+                                }
+                            }
+                        }
+                        agents.write().await.remove(&domain);
+                        log::info!("agent_worker exit for domain: {}", domain);
+                        decrement_gauge!(METRICS_AGENT_LIVE, 1.0);
+                    });
+                }
+                Err(e) => {
+                    log::error!("agent_listener error {}", e);
+                    exit(1);
+                }
+            },
+            e = tcp_agent_listener.recv().fuse() => match e {
                 Ok(agent_connection) => {
                     increment_counter!(METRICS_AGENT_COUNT);
                     log::info!("agent_connection.domain(): {}", agent_connection.domain());
