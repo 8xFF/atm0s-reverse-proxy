@@ -2,18 +2,22 @@
 
 use futures::{AsyncRead, AsyncWrite};
 
+pub mod cluster;
 pub mod http;
 
 #[async_trait::async_trait]
-pub trait ProxyTunnel<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>: Send + Sync {
+pub trait ProxyTunnel: Send + Sync {
     async fn wait(&mut self) -> Option<()>;
     fn domain(&self) -> &str;
-    fn split(self) -> (R, W);
+    fn split(
+        &mut self,
+    ) -> (
+        Box<dyn AsyncRead + Send + Sync + Unpin>,
+        Box<dyn AsyncWrite + Send + Sync + Unpin>,
+    );
 }
 
 #[async_trait::async_trait]
-pub trait ProxyListener<S: ProxyTunnel<R, W>, R: AsyncRead + Unpin, W: AsyncWrite + Unpin>:
-    Send + Sync
-{
-    async fn recv(&mut self) -> Option<S>;
+pub trait ProxyListener: Send + Sync {
+    async fn recv(&mut self) -> Option<Box<dyn ProxyTunnel>>;
 }

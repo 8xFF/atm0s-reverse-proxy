@@ -1,10 +1,7 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use async_std::net::{TcpListener, TcpStream};
-use futures::{
-    io::{ReadHalf, WriteHalf},
-    AsyncReadExt,
-};
+use futures::{AsyncRead, AsyncReadExt, AsyncWrite};
 use tls_parser::{parse_tls_extensions, parse_tls_plaintext};
 
 use super::{ProxyListener, ProxyTunnel};
@@ -27,32 +24,31 @@ impl ProxyHttpListener {
 }
 
 #[async_trait::async_trait]
-impl ProxyListener<ProxyHttpTunnel, ReadHalf<TcpStream>, WriteHalf<TcpStream>>
-    for ProxyHttpListener
-{
-    async fn recv(&mut self) -> Option<ProxyHttpTunnel> {
+impl ProxyListener for ProxyHttpListener {
+    async fn recv(&mut self) -> Option<Box<dyn ProxyTunnel>> {
         let (stream, remote) = self.tcp_listener.accept().await.ok()?;
         log::info!("[ProxyHttpListener] new conn from {}", remote);
-        Some(ProxyHttpTunnel {
-            domain: "demo".to_string(),
-            stream,
+        Some(Box::new(ProxyHttpTunnel {
+            domain: "".to_string(),
+            stream: Some(stream),
             tls: self.tls,
-        })
+        }))
     }
 }
 
 pub struct ProxyHttpTunnel {
     domain: String,
-    stream: TcpStream,
+    stream: Option<TcpStream>,
     tls: bool,
 }
 
 #[async_trait::async_trait]
-impl ProxyTunnel<ReadHalf<TcpStream>, WriteHalf<TcpStream>> for ProxyHttpTunnel {
+impl ProxyTunnel for ProxyHttpTunnel {
     async fn wait(&mut self) -> Option<()> {
         log::info!("[ProxyHttpTunnel] wait first data for checking url...");
         let mut first_pkt = [0u8; 4096];
-        let first_pkt_size = self.stream.peek(&mut first_pkt).await.ok()?;
+        let stream = self.stream.as_mut()?;
+        let first_pkt_size = stream.peek(&mut first_pkt).await.ok()?;
         log::info!(
             "[ProxyHttpTunnel] read {} bytes for determine url",
             first_pkt_size
@@ -75,8 +71,14 @@ impl ProxyTunnel<ReadHalf<TcpStream>, WriteHalf<TcpStream>> for ProxyHttpTunnel 
     fn domain(&self) -> &str {
         &self.domain
     }
-    fn split(self) -> (ReadHalf<TcpStream>, WriteHalf<TcpStream>) {
-        AsyncReadExt::split(self.stream)
+    fn split(
+        &mut self,
+    ) -> (
+        Box<dyn AsyncRead + Send + Sync + Unpin>,
+        Box<dyn AsyncWrite + Send + Sync + Unpin>,
+    ) {
+        let (read, write) = AsyncReadExt::split(self.stream.take().expect("Should has stream"));
+        (Box::new(read), Box::new(write))
     }
 }
 

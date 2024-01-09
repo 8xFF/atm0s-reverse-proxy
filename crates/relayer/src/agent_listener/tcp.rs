@@ -175,7 +175,7 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
         match this.connection.poll_next_inbound(cx) {
-            Poll::Ready(Some(Ok(stream))) => return Poll::Ready(Ok(())),
+            Poll::Ready(Some(Ok(_stream))) => return Poll::Ready(Ok(())),
             Poll::Ready(Some(Err(e))) => return Poll::Ready(Err(e.into())),
             Poll::Ready(None) => {
                 return Poll::Ready(Err("yamux server poll next inbound return None".into()))
