@@ -6,10 +6,10 @@ static A: System = System;
 use std::net::SocketAddr;
 
 use async_std::io::WriteExt;
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 
-use connection::quic::QuicSubConnection;
-use futures::{select, FutureExt};
+use connection::tcp::TcpConnection;
+use futures::{select, AsyncRead, AsyncReadExt, AsyncWrite, FutureExt};
 use local_tunnel::tcp::LocalTcpTunnel;
 use protocol::key::LocalKey;
 use tracing_subscriber::{fmt, layer::*, util::SubscriberInitExt, EnvFilter};
@@ -22,13 +22,23 @@ use crate::{
 mod connection;
 mod local_tunnel;
 
+#[derive(ValueEnum, Debug, Clone)]
+enum Protocol {
+    Tcp,
+    Quic,
+}
+
 /// A HTTP and SNI HTTPs proxy for expose your local service to the internet.
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Address of relay server
-    #[arg(env, long, long, default_value = "127.0.0.1:33333")]
-    quic_connector_addr: SocketAddr,
+    #[arg(env, long)]
+    connector_addr: SocketAddr,
+
+    /// Protocol of relay server
+    #[arg(env, long)]
+    connector_protocol: Protocol,
 
     /// Http proxy dest
     #[arg(env, long, default_value = "127.0.0.1:8080")]
@@ -87,43 +97,72 @@ async fn main() {
     };
 
     loop {
-        log::info!("Connecting to connector... {}", args.quic_connector_addr);
-        if let Ok(mut connection) = QuicConnection::new(args.quic_connector_addr, &local_key).await
-        {
-            log::info!("Connection to connector is established");
-            loop {
-                match connection.recv().await {
-                    Ok(sub_connection) => {
-                        log::info!("recv sub_connection");
-                        async_std::task::spawn_local(run_connection(
-                            sub_connection,
-                            args.http_dest,
-                            args.https_dest,
-                        ));
-                    }
-                    Err(e) => {
-                        log::error!("recv sub_connection error: {}", e);
-                        break;
-                    }
+        log::info!(
+            "Connecting to connector... {:?} addr: {:?}",
+            args.connector_protocol,
+            args.connector_addr
+        );
+        match args.connector_protocol {
+            Protocol::Tcp => match TcpConnection::new(args.connector_addr, &local_key).await {
+                Ok(conn) => {
+                    log::info!("Connected to connector via tcp");
+                    run_loop(conn, args.http_dest, args.https_dest).await;
                 }
-            }
-            log::warn!("Connection to connector is closed, try to reconnect...");
+                Err(e) => {
+                    log::error!("Connect to connector via tcp error: {}", e);
+                }
+            },
+            Protocol::Quic => match QuicConnection::new(args.connector_addr, &local_key).await {
+                Ok(conn) => {
+                    log::info!("Connected to connector via quic");
+                    run_loop(conn, args.http_dest, args.https_dest).await;
+                }
+                Err(e) => {
+                    log::error!("Connect to connector via quic error: {}", e);
+                }
+            },
         }
         //TODO exponential backoff
         async_std::task::sleep(std::time::Duration::from_secs(1)).await;
     }
 }
 
-async fn run_connection(
-    sub_connection: QuicSubConnection,
+async fn run_loop<S, R, W>(
+    mut connection: impl Connection<S, R, W>,
     http_dest: SocketAddr,
     https_dest: SocketAddr,
-) {
+) where
+    S: SubConnection<R, W> + 'static,
+    R: AsyncRead + Send + Unpin + 'static,
+    W: AsyncWrite + Send + Unpin + 'static,
+{
+    log::info!("Connection to connector is established");
+    loop {
+        match connection.recv().await {
+            Ok(sub_connection) => {
+                log::info!("recv sub_connection");
+                async_std::task::spawn_local(run_connection(sub_connection, http_dest, https_dest));
+            }
+            Err(e) => {
+                log::error!("recv sub_connection error: {}", e);
+                break;
+            }
+        }
+    }
+    log::warn!("Connection to connector is closed, try to reconnect...");
+}
+
+async fn run_connection<S, R, W>(sub_connection: S, http_dest: SocketAddr, https_dest: SocketAddr)
+where
+    S: SubConnection<R, W> + 'static,
+    R: AsyncRead + Send + Unpin,
+    W: AsyncWrite + Send + Unpin,
+{
     log::info!("sub_connection pipe to local_tunnel start");
     let (mut reader1, mut writer1) = sub_connection.split();
     let mut first_pkt = [0u8; 4096];
     let (local_tunnel, first_pkt_len) = match reader1.read(&mut first_pkt).await {
-        Ok(Some(first_pkt_len)) => {
+        Ok(first_pkt_len) => {
             log::info!("first pkt size: {}", first_pkt_len);
             if first_pkt_len == 0 {
                 log::error!("first pkt size is 0 => close");
@@ -136,10 +175,6 @@ async fn run_connection(
                 log::info!("create tunnel to http dest {}", http_dest);
                 (LocalTcpTunnel::new(http_dest).await, first_pkt_len)
             }
-        }
-        Ok(None) => {
-            log::error!("read first pkt error: eof");
-            return;
         }
         Err(e) => {
             log::error!("read first pkt error: {}", e);

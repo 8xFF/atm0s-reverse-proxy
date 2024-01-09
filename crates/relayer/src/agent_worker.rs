@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, error::Error};
+use std::{error::Error, marker::PhantomData};
 
 use futures::{select, AsyncRead, AsyncWrite, FutureExt};
 use metrics::increment_gauge;
@@ -8,32 +8,26 @@ use crate::{
     proxy_listener::ProxyTunnel,
 };
 
-pub struct AgentWorker<AG, S, R, W, PT, PR, PW>
+pub struct AgentWorker<AG, S, R, W>
 where
     AG: AgentConnection<S, R, W>,
     S: AgentSubConnection<R, W>,
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
-    PT: ProxyTunnel<PR, PW>,
-    PR: AsyncRead + Unpin,
-    PW: AsyncWrite + Unpin,
 {
-    _tmp: PhantomData<(S, R, W, PR, PW)>,
+    _tmp: PhantomData<(S, R, W)>,
     connection: AG,
-    rx: async_std::channel::Receiver<PT>,
+    rx: async_std::channel::Receiver<Box<dyn ProxyTunnel>>,
 }
 
-impl<AG, S, R, W, PT, PR, PW> AgentWorker<AG, S, R, W, PT, PR, PW>
+impl<AG, S, R, W> AgentWorker<AG, S, R, W>
 where
     AG: AgentConnection<S, R, W>,
     S: AgentSubConnection<R, W> + 'static,
     R: AsyncRead + Send + Unpin,
     W: AsyncWrite + Send + Unpin,
-    PT: ProxyTunnel<PR, PW> + 'static,
-    PR: AsyncRead + Send + Unpin,
-    PW: AsyncWrite + Send + Unpin,
 {
-    pub fn new(connection: AG) -> (Self, async_std::channel::Sender<PT>) {
+    pub fn new(connection: AG) -> (Self, async_std::channel::Sender<Box<dyn ProxyTunnel>>) {
         let (tx, rx) = async_std::channel::bounded(3);
         (
             Self {
@@ -46,7 +40,7 @@ where
     }
 
     pub async fn run(&mut self) -> Result<(), Box<dyn Error>> {
-        let incoming = select! {
+        let mut incoming = select! {
             incoming = self.rx.recv().fuse() => incoming?,
             e = self.connection.recv().fuse() => {
                 e?;
