@@ -1,4 +1,4 @@
-use atm0s_sdn::{NodeAddr, NodeAliasSdk, NodeId};
+use atm0s_sdn::{NodeAddr, NodeAliasId, NodeAliasSdk, NodeId};
 use clap::Parser;
 #[cfg(feature = "expose-metrics")]
 use metrics_dashboard::build_dashboard_route;
@@ -23,7 +23,7 @@ const METRICS_CLUSTER_LIVE: &str = "cluster.live";
 const METRICS_CLUSTER_COUNT: &str = "cluster.count";
 pub(crate) const METRICS_PROXY_LIVE: &str = "proxy.live";
 
-use crate::utils::domain_hash;
+use crate::utils::home_id_from_domain;
 use crate::{
     agent_listener::{AgentConnection, AgentListener},
     proxy_listener::{ProxyListener, ProxyTunnel},
@@ -171,7 +171,7 @@ async fn main() {
 
 async fn run_agent_connection<AG, S, R, W>(
     agent_connection: AG,
-    agents: Arc<RwLock<HashMap<String, async_std::channel::Sender<Box<dyn ProxyTunnel>>>>>,
+    agents: Arc<RwLock<HashMap<NodeAliasId, async_std::channel::Sender<Box<dyn ProxyTunnel>>>>>,
     node_alias_sdk: NodeAliasSdk,
 ) where
     AG: AgentConnection<S, R, W> + 'static,
@@ -184,8 +184,12 @@ async fn run_agent_connection<AG, S, R, W>(
     let domain = agent_connection.domain().to_string();
     let (mut agent_worker, proxy_tunnel_tx) =
         agent_worker::AgentWorker::<AG, S, R, W>::new(agent_connection);
-    agents.write().await.insert(domain.clone(), proxy_tunnel_tx);
-    node_alias_sdk.register(domain_hash(&domain));
+    let home_id = home_id_from_domain(&domain);
+    agents
+        .write()
+        .await
+        .insert(home_id.clone(), proxy_tunnel_tx);
+    node_alias_sdk.register(home_id.clone());
     let agents = agents.clone();
     async_std::task::spawn(async move {
         increment_gauge!(METRICS_AGENT_LIVE, 1.0);
@@ -199,8 +203,8 @@ async fn run_agent_connection<AG, S, R, W>(
                 }
             }
         }
-        agents.write().await.remove(&domain);
-        node_alias_sdk.unregister(domain_hash(&domain));
+        agents.write().await.remove(&home_id);
+        node_alias_sdk.unregister(home_id_from_domain(&domain));
         log::info!("agent_worker exit for domain: {}", domain);
         decrement_gauge!(METRICS_AGENT_LIVE, 1.0);
     });
