@@ -59,7 +59,11 @@ impl ProxyTunnel for ProxyHttpTunnel {
             let mut headers = [httparse::EMPTY_HEADER; 64];
             let mut req = httparse::Request::new(&mut headers);
             let _ = req.parse(&first_pkt[..first_pkt_size]).ok()?;
-            let domain = req.headers.iter().find(|h| h.name == "Host")?.value;
+            let domain = req
+                .headers
+                .iter()
+                .find(|h| h.name.to_lowercase() == "host")?
+                .value;
             // dont get the port
             let domain = String::from_utf8_lossy(domain).to_string();
             let domain = domain.split(':').next()?;
