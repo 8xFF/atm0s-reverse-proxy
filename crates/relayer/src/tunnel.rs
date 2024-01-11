@@ -1,13 +1,13 @@
 use std::{collections::HashMap, error::Error, sync::Arc, time::Duration};
 
 use crate::{
-    proxy_listener::ProxyTunnel, utils::domain_hash, METRICS_CLUSTER_COUNT, METRICS_CLUSTER_LIVE,
-    METRICS_PROXY_COUNT,
+    proxy_listener::ProxyTunnel, utils::home_id_from_domain, METRICS_CLUSTER_COUNT,
+    METRICS_CLUSTER_LIVE, METRICS_PROXY_COUNT,
 };
 use async_std::{prelude::FutureExt, sync::RwLock};
 use atm0s_sdn::{
     virtual_socket::{make_insecure_quinn_client, vnet_addr, VirtualNet},
-    NodeAliasResult, NodeAliasSdk,
+    NodeAliasId, NodeAliasResult, NodeAliasSdk,
 };
 use futures::{select, FutureExt as _};
 use metrics::{decrement_gauge, increment_counter, increment_gauge};
@@ -20,7 +20,7 @@ pub enum TunnelContext {
 
 pub async fn tunnel_task(
     mut proxy_tunnel: Box<dyn ProxyTunnel>,
-    agents: Arc<RwLock<HashMap<String, async_std::channel::Sender<Box<dyn ProxyTunnel>>>>>,
+    agents: Arc<RwLock<HashMap<NodeAliasId, async_std::channel::Sender<Box<dyn ProxyTunnel>>>>>,
     context: TunnelContext,
 ) {
     match proxy_tunnel.wait().timeout(Duration::from_secs(5)).await {
@@ -37,7 +37,8 @@ pub async fn tunnel_task(
     increment_counter!(METRICS_PROXY_COUNT);
     log::info!("proxy_tunnel.domain(): {}", proxy_tunnel.domain());
     let domain = proxy_tunnel.domain().to_string();
-    if let Some(agent_tx) = agents.read().await.get(&domain) {
+    let home_id = home_id_from_domain(&domain);
+    if let Some(agent_tx) = agents.read().await.get(&home_id) {
         agent_tx.send(proxy_tunnel).await.ok();
     } else if let TunnelContext::Local(node_alias_sdk, virtual_net) = context {
         if let Err(e) = tunnel_over_cluster(domain, proxy_tunnel, node_alias_sdk, virtual_net).await
@@ -57,7 +58,7 @@ async fn tunnel_over_cluster(
         "agent not found for domain: {} in local => finding in cluster",
         domain
     );
-    let node_alias_id = domain_hash(&domain);
+    let node_alias_id = home_id_from_domain(&domain);
     let (tx, rx) = async_std::channel::bounded(1);
     node_alias_sdk.find_alias(
         node_alias_id,
