@@ -8,7 +8,8 @@ use std::{
 use async_std::net::TcpStream;
 use futures::io::{ReadHalf, WriteHalf};
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Future};
-use protocol::{key::LocalKey, rpc::RegisterResponse};
+use protocol::key::AgentSigner;
+use serde::de::DeserializeOwned;
 use yamux::Mode;
 
 use super::{Connection, SubConnection};
@@ -29,41 +30,37 @@ impl SubConnection<ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>> for TcpSub
     }
 }
 
-pub struct TcpConnection {
+pub struct TcpConnection<RES> {
+    response: RES,
     conn: yamux::Connection<TcpStream>,
-    #[allow(unused)]
-    domain: String,
 }
 
-impl TcpConnection {
-    pub async fn new(dest: SocketAddr, local_key: &LocalKey) -> Result<Self, Box<dyn Error>> {
+impl<RES: DeserializeOwned> TcpConnection<RES> {
+    pub async fn new<AS: AgentSigner<RES>>(
+        dest: SocketAddr,
+        agent_signer: &AS,
+    ) -> Result<Self, Box<dyn Error>> {
         let mut stream = TcpStream::connect(dest).await?;
-        let request = local_key.to_request();
-        let request_buf: Vec<u8> = (&request).into();
-        stream.write_all(&request_buf).await?;
+        stream.write_all(&agent_signer.sign_connect_req()).await?;
 
         let mut buf = [0u8; 4096];
         let buf_len = stream.read(&mut buf).await?;
-        let response = RegisterResponse::try_from(&buf[..buf_len])?;
-        match response.response {
-            Ok(domain) => {
-                log::info!("registed domain {}", domain);
-                Ok(Self {
-                    conn: yamux::Connection::new(stream, Default::default(), Mode::Server),
-                    domain,
-                })
-            }
-            Err(e) => {
-                log::error!("register response error {}", e);
-                return Err(e.into());
-            }
-        }
+        let response: RES = agent_signer.validate_connect_res(&buf[..buf_len])?;
+        Ok(Self {
+            conn: yamux::Connection::new(stream, Default::default(), Mode::Server),
+            response,
+        })
+    }
+
+    pub fn response(&self) -> &RES {
+        &self.response
     }
 }
 
 #[async_trait::async_trait]
-impl Connection<TcpSubConnection, ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>>
-    for TcpConnection
+impl<RES: Send + Sync>
+    Connection<TcpSubConnection, ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>>
+    for TcpConnection<RES>
 {
     async fn recv(&mut self) -> Result<TcpSubConnection, Box<dyn Error>> {
         let mux_server = YamuxConnectionServer::new(&mut self.conn);

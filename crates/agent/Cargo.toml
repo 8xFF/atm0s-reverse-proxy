@@ -13,7 +13,9 @@ futures = "0.3.4"
 log = "0.4.20"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "std"] }
 yamux = "0.13.1"
+serde = { version = "1.0.193", features = ["derive"] }
 protocol = { path = "../protocol" }
+protocol-ed25519 = { path = "../protocol_ed25519", optional = true }
 quinn = { version = "0.10.2", default-features = false, features = ["native-certs", "tls-rustls", "log", "runtime-async-std", "futures-io", "ring"] }
 rustls = { version = "0.21.0", default-features = false, features = ["quic", "dangerous_configuration"] }
 
@@ -22,3 +24,6 @@ strip = true  # Automatically strip symbols from the binary.
 opt-level = "z"  # Optimize for size.
 lto = true
 codegen-units = 1
+
+[features]
+default = ["protocol-ed25519"]

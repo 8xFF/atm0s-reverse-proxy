@@ -1,40 +1,20 @@
-use atm0s_sdn::{NodeAddr, NodeAliasId, NodeAliasSdk, NodeId};
+use atm0s_sdn::{NodeAddr, NodeId};
 use clap::Parser;
 #[cfg(feature = "expose-metrics")]
 use metrics_dashboard::build_dashboard_route;
 #[cfg(feature = "expose-metrics")]
 use poem::{listener::TcpListener, middleware::Tracing, EndpointExt as _, Route, Server};
+use relayer::{
+    run_agent_connection, run_sdn, tunnel_task, AgentListener, AgentQuicListener, AgentTcpListener,
+    ProxyHttpListener, ProxyListener, TunnelContext, METRICS_AGENT_COUNT, METRICS_AGENT_LIVE,
+    METRICS_PROXY_COUNT, METRICS_PROXY_LIVE,
+};
 use std::{collections::HashMap, net::SocketAddr, process::exit, sync::Arc};
 
-use agent_listener::tcp::AgentTcpListener;
-use agent_listener::{quic::AgentQuicListener, AgentSubConnection};
 use async_std::sync::RwLock;
-use futures::{select, AsyncRead, AsyncWrite, FutureExt};
-use metrics::{
-    decrement_gauge, describe_counter, describe_gauge, increment_counter, increment_gauge,
-};
-use proxy_listener::http::ProxyHttpListener;
+use futures::{select, FutureExt};
+use metrics::{describe_counter, describe_gauge};
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt, EnvFilter};
-
-const METRICS_AGENT_COUNT: &str = "agent.count";
-const METRICS_AGENT_LIVE: &str = "agent.live";
-const METRICS_PROXY_COUNT: &str = "proxy.count";
-const METRICS_CLUSTER_LIVE: &str = "cluster.live";
-const METRICS_CLUSTER_COUNT: &str = "cluster.count";
-pub(crate) const METRICS_PROXY_LIVE: &str = "proxy.live";
-
-use crate::utils::home_id_from_domain;
-use crate::{
-    agent_listener::{AgentConnection, AgentListener},
-    proxy_listener::{ProxyListener, ProxyTunnel},
-    tunnel::TunnelContext,
-};
-
-mod agent_listener;
-mod agent_worker;
-mod proxy_listener;
-mod tunnel;
-mod utils;
 
 /// A HTTP and SNI HTTPs proxy for expose your local service to the internet.
 #[derive(Parser, Debug)]
@@ -64,6 +44,10 @@ struct Args {
     #[arg(env, long)]
     sdn_node_id: NodeId,
 
+    /// atm0s-sdn node-id
+    #[arg(env, long, default_value_t = 0)]
+    sdn_port: u16,
+
     /// atm0s-sdn secret key
     #[arg(env, long, default_value = "insecure")]
     sdn_secret_key: String,
@@ -76,6 +60,7 @@ struct Args {
 #[async_std::main]
 async fn main() {
     let args = Args::parse();
+    let cluster_validator = protocol_ed25519::ClusterValidatorImpl::new(args.root_domain);
 
     //if RUST_LOG env is not set, set it to info
     if std::env::var("RUST_LOG").is_err() {
@@ -86,8 +71,9 @@ async fn main() {
         .with(EnvFilter::from_default_env())
         .init();
     let mut quic_agent_listener =
-        AgentQuicListener::new(args.connector_port, args.root_domain.clone()).await;
-    let mut tcp_agent_listener = AgentTcpListener::new(args.connector_port, args.root_domain).await;
+        AgentQuicListener::new(args.connector_port, cluster_validator.clone()).await;
+    let mut tcp_agent_listener =
+        AgentTcpListener::new(args.connector_port, cluster_validator).await;
     let mut proxy_http_listener = ProxyHttpListener::new(args.http_port, false)
         .await
         .expect("Should listen http port");
@@ -114,9 +100,13 @@ async fn main() {
             .await;
     });
 
-    let (mut cluster_endpoint, node_alias_sdk, virtual_net) =
-        proxy_listener::cluster::run_sdn(args.sdn_node_id, args.sdn_secret_key, args.sdn_seeds)
-            .await;
+    let (mut cluster_endpoint, node_alias_sdk, virtual_net, _rpc_box) = run_sdn(
+        args.sdn_node_id,
+        args.sdn_port,
+        args.sdn_secret_key,
+        args.sdn_seeds,
+    )
+    .await;
 
     loop {
         select! {
@@ -140,7 +130,7 @@ async fn main() {
             },
             e = proxy_http_listener.recv().fuse() => match e {
                 Some(proxy_tunnel) => {
-                    async_std::task::spawn(tunnel::tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(node_alias_sdk.clone(), virtual_net.clone())));
+                    async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(node_alias_sdk.clone(), virtual_net.clone())));
                 }
                 None => {
                     log::error!("proxy_http_listener.recv()");
@@ -149,7 +139,7 @@ async fn main() {
             },
             e = proxy_tls_listener.recv().fuse() => match e {
                 Some(proxy_tunnel) => {
-                    async_std::task::spawn(tunnel::tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(node_alias_sdk.clone(), virtual_net.clone())));
+                    async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(node_alias_sdk.clone(), virtual_net.clone())));
                 }
                 None => {
                     log::error!("proxy_http_listener.recv()");
@@ -158,7 +148,7 @@ async fn main() {
             },
             e = cluster_endpoint.recv().fuse() => match e {
                 Some(proxy_tunnel) => {
-                    async_std::task::spawn(tunnel::tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Cluster));
+                    async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Cluster));
                 }
                 None => {
                     log::error!("cluster_endpoint.accept()");
@@ -167,45 +157,4 @@ async fn main() {
             }
         }
     }
-}
-
-async fn run_agent_connection<AG, S, R, W>(
-    agent_connection: AG,
-    agents: Arc<RwLock<HashMap<NodeAliasId, async_std::channel::Sender<Box<dyn ProxyTunnel>>>>>,
-    node_alias_sdk: NodeAliasSdk,
-) where
-    AG: AgentConnection<S, R, W> + 'static,
-    S: AgentSubConnection<R, W> + 'static,
-    R: AsyncRead + Send + Unpin + 'static,
-    W: AsyncWrite + Send + Unpin + 'static,
-{
-    increment_counter!(METRICS_AGENT_COUNT);
-    log::info!("agent_connection.domain(): {}", agent_connection.domain());
-    let domain = agent_connection.domain().to_string();
-    let (mut agent_worker, proxy_tunnel_tx) =
-        agent_worker::AgentWorker::<AG, S, R, W>::new(agent_connection);
-    let home_id = home_id_from_domain(&domain);
-    agents
-        .write()
-        .await
-        .insert(home_id.clone(), proxy_tunnel_tx);
-    node_alias_sdk.register(home_id.clone());
-    let agents = agents.clone();
-    async_std::task::spawn(async move {
-        increment_gauge!(METRICS_AGENT_LIVE, 1.0);
-        log::info!("agent_worker run for domain: {}", domain);
-        loop {
-            match agent_worker.run().await {
-                Ok(()) => {}
-                Err(e) => {
-                    log::error!("agent_worker error: {}", e);
-                    break;
-                }
-            }
-        }
-        agents.write().await.remove(&home_id);
-        node_alias_sdk.unregister(home_id_from_domain(&domain));
-        log::info!("agent_worker exit for domain: {}", domain);
-        decrement_gauge!(METRICS_AGENT_LIVE, 1.0);
-    });
 }

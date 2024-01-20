@@ -62,8 +62,10 @@ dependencies = [
  "futures",
  "log",
  "protocol",
+ "protocol-ed25519",
  "quinn",
  "rustls",
+ "serde",
  "tracing-subscriber",
  "yamux",
 ]
@@ -2434,7 +2436,16 @@ name = "protocol"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "serde",
+]
+
+[[package]]
+name = "protocol-ed25519"
+version = "0.1.0"
+dependencies = [
+ "bincode",
  "ed25519-dalek",
+ "protocol",
  "rand",
  "serde",
 ]
@@ -2685,9 +2696,11 @@ dependencies = [
  "metrics-dashboard",
  "poem",
  "protocol",
+ "protocol-ed25519",
  "quinn",
  "rcgen",
  "rustls",
+ "serde",
  "tls-parser",
  "tracing-subscriber",
  "yamux",

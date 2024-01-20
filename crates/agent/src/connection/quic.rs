@@ -1,8 +1,9 @@
+use protocol::key::AgentSigner;
+use serde::de::DeserializeOwned;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{error::Error, net::SocketAddr};
 
-use protocol::{key::LocalKey, rpc::RegisterResponse};
 use quinn::{ClientConfig, Endpoint, RecvStream, SendStream, TransportConfig};
 
 use super::{Connection, SubConnection};
@@ -18,14 +19,16 @@ impl SubConnection<RecvStream, SendStream> for QuicSubConnection {
     }
 }
 
-pub struct QuicConnection {
+pub struct QuicConnection<RES> {
+    response: RES,
     connection: quinn::Connection,
-    #[allow(unused)]
-    domain: String,
 }
 
-impl QuicConnection {
-    pub async fn new(dest: SocketAddr, local_key: &LocalKey) -> Result<Self, Box<dyn Error>> {
+impl<RES: DeserializeOwned> QuicConnection<RES> {
+    pub async fn new<AS: AgentSigner<RES>>(
+        dest: SocketAddr,
+        agent_signer: &AS,
+    ) -> Result<Self, Box<dyn Error>> {
         let mut endpoint = Endpoint::client("0.0.0.0:0".parse().expect(""))?;
         endpoint.set_default_client_config(configure_client());
 
@@ -36,31 +39,31 @@ impl QuicConnection {
         let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
         log::info!("opened bi stream, send register request");
 
-        let request = local_key.to_request();
-        let request_buf: Vec<u8> = (&request).into();
-        send_stream.write_all(&request_buf).await?;
+        send_stream
+            .write_all(&agent_signer.sign_connect_req())
+            .await?;
 
         let mut buf = [0u8; 4096];
         let buf_len = recv_stream
             .read(&mut buf)
             .await?
             .ok_or::<Box<dyn Error>>("read register response error".into())?;
-        let response = RegisterResponse::try_from(&buf[..buf_len])?;
-        match response.response {
-            Ok(domain) => {
-                log::info!("registed domain {}", domain);
-                Ok(Self { connection, domain })
-            }
-            Err(e) => {
-                log::error!("register response error {}", e);
-                return Err(e.into());
-            }
-        }
+        let response: RES = agent_signer.validate_connect_res(&buf[..buf_len])?;
+        Ok(Self {
+            connection,
+            response,
+        })
+    }
+
+    pub fn response(&self) -> &RES {
+        &self.response
     }
 }
 
 #[async_trait::async_trait]
-impl Connection<QuicSubConnection, RecvStream, SendStream> for QuicConnection {
+impl<RES: Send + Sync> Connection<QuicSubConnection, RecvStream, SendStream>
+    for QuicConnection<RES>
+{
     async fn recv(&mut self) -> Result<QuicSubConnection, Box<dyn Error>> {
         let (send, recv) = self.connection.accept_bi().await?;
         Ok(QuicSubConnection { send, recv })

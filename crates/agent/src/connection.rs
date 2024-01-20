@@ -2,10 +2,17 @@
 
 use std::error::Error;
 
+use clap::ValueEnum;
 use futures::{AsyncRead, AsyncWrite};
 
 pub mod quic;
 pub mod tcp;
+
+#[derive(ValueEnum, Debug, Clone)]
+pub enum Protocol {
+    Tcp,
+    Quic,
+}
 
 pub trait SubConnection<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>: Send + Sync {
     fn split(self) -> (R, W);
