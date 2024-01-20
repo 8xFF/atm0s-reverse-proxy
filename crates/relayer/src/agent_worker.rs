@@ -1,10 +1,10 @@
-use std::{error::Error, marker::PhantomData};
+use std::{error::Error, marker::PhantomData, sync::Arc};
 
 use futures::{select, AsyncRead, AsyncWrite, FutureExt};
 use metrics::increment_gauge;
 
 use crate::{
-    agent_listener::{AgentConnection, AgentSubConnection},
+    agent_listener::{AgentConnection, AgentRpcHandler, AgentSubConnection},
     proxy_listener::ProxyTunnel,
 };
 
@@ -18,6 +18,7 @@ where
     _tmp: PhantomData<(S, R, W)>,
     connection: AG,
     rx: async_std::channel::Receiver<Box<dyn ProxyTunnel>>,
+    rpc_handler: Arc<dyn AgentRpcHandler>,
 }
 
 impl<AG, S, R, W> AgentWorker<AG, S, R, W>
@@ -27,13 +28,17 @@ where
     R: AsyncRead + Send + Unpin,
     W: AsyncWrite + Send + Unpin,
 {
-    pub fn new(connection: AG) -> (Self, async_std::channel::Sender<Box<dyn ProxyTunnel>>) {
+    pub fn new(
+        connection: AG,
+        rpc_handler: Arc<dyn AgentRpcHandler>,
+    ) -> (Self, async_std::channel::Sender<Box<dyn ProxyTunnel>>) {
         let (tx, rx) = async_std::channel::bounded(3);
         (
             Self {
                 _tmp: PhantomData,
                 connection,
                 rx,
+                rpc_handler,
             },
             tx,
         )
@@ -42,7 +47,7 @@ where
     pub async fn run(&mut self) -> Result<(), Box<dyn Error>> {
         let mut incoming = select! {
             incoming = self.rx.recv().fuse() => incoming?,
-            e = self.connection.recv().fuse() => {
+            e = self.connection.recv(&self.rpc_handler).fuse() => {
                 e?;
                 return Ok(());
             }

@@ -1,7 +1,10 @@
 use std::{alloc::System, net::SocketAddr};
 
-use agent::{run_connection_loop, Protocol, QuicConnection, TcpConnection};
+use agent::{
+    run_tunnel_connection, Connection, Protocol, QuicConnection, SubConnection, TcpConnection,
+};
 use clap::Parser;
+use futures::{AsyncRead, AsyncWrite};
 use protocol_ed25519::AgentLocalKey;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -104,5 +107,32 @@ async fn main() {
         }
         //TODO exponential backoff
         async_std::task::sleep(std::time::Duration::from_secs(1)).await;
+    }
+}
+
+pub async fn run_connection_loop<S, R, W>(
+    mut connection: impl Connection<S, R, W>,
+    http_dest: SocketAddr,
+    https_dest: SocketAddr,
+) where
+    S: SubConnection<R, W> + 'static,
+    R: AsyncRead + Send + Unpin + 'static,
+    W: AsyncWrite + Send + Unpin + 'static,
+{
+    loop {
+        match connection.recv().await {
+            Ok(sub_connection) => {
+                log::info!("recv sub_connection");
+                async_std::task::spawn_local(run_tunnel_connection(
+                    sub_connection,
+                    http_dest,
+                    https_dest,
+                ));
+            }
+            Err(e) => {
+                log::error!("recv sub_connection error: {}", e);
+                break;
+            }
+        }
     }
 }

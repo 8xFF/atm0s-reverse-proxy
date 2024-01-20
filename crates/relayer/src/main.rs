@@ -5,9 +5,9 @@ use metrics_dashboard::build_dashboard_route;
 #[cfg(feature = "expose-metrics")]
 use poem::{listener::TcpListener, middleware::Tracing, EndpointExt as _, Route, Server};
 use relayer::{
-    run_agent_connection, run_sdn, tunnel_task, AgentListener, AgentQuicListener, AgentTcpListener,
-    ProxyHttpListener, ProxyListener, TunnelContext, METRICS_AGENT_COUNT, METRICS_AGENT_LIVE,
-    METRICS_PROXY_COUNT, METRICS_PROXY_LIVE,
+    run_agent_connection, run_sdn, tunnel_task, AgentListener, AgentQuicListener,
+    AgentRpcHandlerDummy, AgentTcpListener, ProxyHttpListener, ProxyListener, TunnelContext,
+    METRICS_AGENT_COUNT, METRICS_AGENT_LIVE, METRICS_PROXY_COUNT, METRICS_PROXY_LIVE,
 };
 use std::{collections::HashMap, net::SocketAddr, process::exit, sync::Arc};
 
@@ -108,11 +108,13 @@ async fn main() {
     )
     .await;
 
+    let agent_rpc_handler = Arc::new(AgentRpcHandlerDummy::default());
+
     loop {
         select! {
             e = quic_agent_listener.recv().fuse() => match e {
                 Ok(agent_connection) => {
-                    run_agent_connection(agent_connection, agents.clone(), node_alias_sdk.clone()).await;
+                    run_agent_connection(agent_connection, agents.clone(), node_alias_sdk.clone(), agent_rpc_handler.clone()).await;
                 }
                 Err(e) => {
                     log::error!("agent_listener error {}", e);
@@ -121,7 +123,7 @@ async fn main() {
             },
             e = tcp_agent_listener.recv().fuse() => match e {
                 Ok(agent_connection) => {
-                    run_agent_connection(agent_connection, agents.clone(), node_alias_sdk.clone()).await;
+                    run_agent_connection(agent_connection, agents.clone(), node_alias_sdk.clone(), agent_rpc_handler.clone()).await;
                 }
                 Err(e) => {
                     log::error!("agent_listener error {}", e);

@@ -1,5 +1,6 @@
 use protocol::key::AgentSigner;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{error::Error, net::SocketAddr};
@@ -22,6 +23,7 @@ impl SubConnection<RecvStream, SendStream> for QuicSubConnection {
 pub struct QuicConnection<RES> {
     response: RES,
     connection: quinn::Connection,
+    rpc_buf: [u8; 16000],
 }
 
 impl<RES: DeserializeOwned> QuicConnection<RES> {
@@ -52,6 +54,7 @@ impl<RES: DeserializeOwned> QuicConnection<RES> {
         Ok(Self {
             connection,
             response,
+            rpc_buf: [0u8; 16000],
         })
     }
 
@@ -64,6 +67,20 @@ impl<RES: DeserializeOwned> QuicConnection<RES> {
 impl<RES: Send + Sync> Connection<QuicSubConnection, RecvStream, SendStream>
     for QuicConnection<RES>
 {
+    async fn rpc<REQ: Serialize + Send + Sync, RES2: DeserializeOwned + Send + Sync>(
+        &mut self,
+        req: REQ,
+    ) -> Result<RES2, Box<dyn Error>> {
+        let (mut send, mut recv) = self.connection.open_bi().await?;
+        send.write_all(&bincode::serialize(&req)?).await?;
+        let buf_len = recv
+            .read(&mut self.rpc_buf)
+            .await?
+            .ok_or("read rpc response error")?;
+        let res: RES2 = bincode::deserialize(&self.rpc_buf[..buf_len])?;
+        Ok(res)
+    }
+
     async fn recv(&mut self) -> Result<QuicSubConnection, Box<dyn Error>> {
         let (send, recv) = self.connection.accept_bi().await?;
         Ok(QuicSubConnection { send, recv })

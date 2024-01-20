@@ -5,10 +5,7 @@ use async_std::io::WriteExt;
 use futures::{select, AsyncRead, AsyncReadExt, AsyncWrite, FutureExt};
 use local_tunnel::tcp::LocalTcpTunnel;
 
-use crate::{
-    connection::{Connection, SubConnection},
-    local_tunnel::LocalTunnel,
-};
+use crate::local_tunnel::LocalTunnel;
 
 mod connection;
 mod local_tunnel;
@@ -16,34 +13,14 @@ mod local_tunnel;
 pub use connection::{
     quic::{QuicConnection, QuicSubConnection},
     tcp::{TcpConnection, TcpSubConnection},
-    Protocol,
+    Connection, Protocol, SubConnection,
 };
 
-pub async fn run_connection_loop<S, R, W>(
-    mut connection: impl Connection<S, R, W>,
+pub async fn run_tunnel_connection<S, R, W>(
+    sub_connection: S,
     http_dest: SocketAddr,
     https_dest: SocketAddr,
 ) where
-    S: SubConnection<R, W> + 'static,
-    R: AsyncRead + Send + Unpin + 'static,
-    W: AsyncWrite + Send + Unpin + 'static,
-{
-    loop {
-        match connection.recv().await {
-            Ok(sub_connection) => {
-                log::info!("recv sub_connection");
-                async_std::task::spawn_local(run_connection(sub_connection, http_dest, https_dest));
-            }
-            Err(e) => {
-                log::error!("recv sub_connection error: {}", e);
-                break;
-            }
-        }
-    }
-}
-
-async fn run_connection<S, R, W>(sub_connection: S, http_dest: SocketAddr, https_dest: SocketAddr)
-where
     S: SubConnection<R, W> + 'static,
     R: AsyncRead + Send + Unpin,
     W: AsyncWrite + Send + Unpin,

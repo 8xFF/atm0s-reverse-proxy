@@ -26,7 +26,9 @@ mod utils;
 
 pub use agent_listener::quic::{AgentQuicConnection, AgentQuicListener, AgentQuicSubConnection};
 pub use agent_listener::tcp::{AgentTcpConnection, AgentTcpListener, AgentTcpSubConnection};
-pub use agent_listener::{AgentConnection, AgentListener, AgentSubConnection};
+pub use agent_listener::{
+    AgentConnection, AgentListener, AgentRpcHandler, AgentRpcHandlerDummy, AgentSubConnection,
+};
 
 pub use proxy_listener::cluster::{run_sdn, ProxyClusterListener, ProxyClusterTunnel};
 pub use proxy_listener::http::{ProxyHttpListener, ProxyHttpTunnel};
@@ -38,6 +40,7 @@ pub async fn run_agent_connection<AG, S, R, W>(
     agent_connection: AG,
     agents: Arc<RwLock<HashMap<NodeAliasId, async_std::channel::Sender<Box<dyn ProxyTunnel>>>>>,
     node_alias_sdk: NodeAliasSdk,
+    agent_rpc_handler: Arc<dyn AgentRpcHandler>,
 ) where
     AG: AgentConnection<S, R, W> + 'static,
     S: AgentSubConnection<R, W> + 'static,
@@ -48,7 +51,7 @@ pub async fn run_agent_connection<AG, S, R, W>(
     log::info!("agent_connection.domain(): {}", agent_connection.domain());
     let domain = agent_connection.domain().to_string();
     let (mut agent_worker, proxy_tunnel_tx) =
-        agent_worker::AgentWorker::<AG, S, R, W>::new(agent_connection);
+        agent_worker::AgentWorker::<AG, S, R, W>::new(agent_connection, agent_rpc_handler);
     let home_id = home_id_from_domain(&domain);
     agents
         .write()
