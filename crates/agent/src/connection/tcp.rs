@@ -9,7 +9,7 @@ use async_std::net::TcpStream;
 use futures::io::{ReadHalf, WriteHalf};
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Future};
 use protocol::key::AgentSigner;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::de::DeserializeOwned;
 use yamux::Mode;
 
 use super::{Connection, SubConnection};
@@ -62,10 +62,11 @@ impl<RES: Send + Sync>
     Connection<TcpSubConnection, ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>>
     for TcpConnection<RES>
 {
-    async fn rpc<REQ: Serialize + Send + Sync, RES2: DeserializeOwned + Send + Sync>(
+    fn rpc(
         &mut self,
-        _req: REQ,
-    ) -> Result<RES2, Box<dyn Error>> {
+        _req: Vec<u8>,
+        _handler: Box<dyn FnOnce(Result<Vec<u8>, Box<dyn Error>>) + Send + Sync>,
+    ) {
         todo!()
     }
 

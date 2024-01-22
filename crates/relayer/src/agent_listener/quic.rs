@@ -113,9 +113,10 @@ impl AgentConnection<AgentQuicSubConnection, RecvStream, SendStream> for AgentQu
 
     async fn recv(&mut self, rpc_handler: &Arc<dyn AgentRpcHandler>) -> Result<(), Box<dyn Error>> {
         let (send, recv) = self.conn.accept_bi().await?;
+        let domain = self.domain.clone();
         let rpc_handle = rpc_handler.clone();
         async_std::task::spawn(async move {
-            if let Err(e) = handle_rpc(send, recv, rpc_handle).await {
+            if let Err(e) = handle_rpc(domain, send, recv, rpc_handle).await {
                 log::error!("handle_rpc error: {}", e);
             }
         });
@@ -156,13 +157,14 @@ fn configure_server() -> Result<(ServerConfig, Vec<u8>), Box<dyn Error>> {
 }
 
 async fn handle_rpc(
+    domain: String,
     mut send: SendStream,
     mut recv: RecvStream,
     handler: Arc<dyn AgentRpcHandler>,
 ) -> Result<(), Box<dyn Error>> {
-    let mut buf = [0; 16000];
+    let mut buf = [0; 4096];
     let buf_len = recv.read(&mut buf).await?.ok_or("No incomming data")?;
-    let res = handler.handle(&buf[..buf_len]).await;
+    let res = handler.handle(&domain, &buf[..buf_len]).await;
     send.write_all(&res).await?;
     Ok(())
 }

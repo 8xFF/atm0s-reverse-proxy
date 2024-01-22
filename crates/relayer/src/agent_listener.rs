@@ -33,7 +33,7 @@ pub trait AgentListener<
 
 #[async_trait::async_trait]
 pub trait AgentRpcHandler: Send + Sync {
-    async fn handle(&self, req: &[u8]) -> Vec<u8>;
+    async fn handle(&self, agent_domain: &str, req: &[u8]) -> Vec<u8>;
 }
 
 #[derive(Default)]
@@ -41,7 +41,7 @@ pub struct AgentRpcHandlerDummy {}
 
 #[async_trait::async_trait]
 impl AgentRpcHandler for AgentRpcHandlerDummy {
-    async fn handle(&self, _req: &[u8]) -> Vec<u8> {
+    async fn handle(&self, _agent_domain: &str, _req: &[u8]) -> Vec<u8> {
         vec![]
     }
 }

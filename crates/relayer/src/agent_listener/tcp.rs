@@ -125,7 +125,10 @@ impl AgentConnection<AgentTcpSubConnection, ReadHalf<yamux::Stream>, WriteHalf<y
         })
     }
 
-    async fn recv(&mut self, _rpc_handler: &Arc<dyn AgentRpcHandler>) -> Result<(), Box<dyn Error>> {
+    async fn recv(
+        &mut self,
+        _rpc_handler: &Arc<dyn AgentRpcHandler>,
+    ) -> Result<(), Box<dyn Error>> {
         //TODO handle rpc
         RecvStreamsClient {
             connection: &mut self.connector,

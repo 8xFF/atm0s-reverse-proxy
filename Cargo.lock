@@ -53,25 +53,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "agent"
-version = "0.1.0"
-dependencies = [
- "async-std",
- "async-trait",
- "bincode",
- "clap",
- "futures",
- "log",
- "protocol",
- "protocol-ed25519",
- "quinn",
- "rustls",
- "serde",
- "tracing-subscriber",
- "yamux",
-]
-
-[[package]]
 name = "ahash"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -384,6 +365,69 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.48",
+]
+
+[[package]]
+name = "atm0s-reverse-proxy-agent"
+version = "0.1.0"
+dependencies = [
+ "async-std",
+ "async-trait",
+ "atm0s-reverse-proxy-protocol",
+ "atm0s-reverse-proxy-protocol-ed25519",
+ "bincode",
+ "clap",
+ "futures",
+ "log",
+ "quinn",
+ "rustls",
+ "serde",
+ "tracing-subscriber",
+ "yamux",
+]
+
+[[package]]
+name = "atm0s-reverse-proxy-protocol"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "serde",
+]
+
+[[package]]
+name = "atm0s-reverse-proxy-protocol-ed25519"
+version = "0.1.0"
+dependencies = [
+ "atm0s-reverse-proxy-protocol",
+ "bincode",
+ "ed25519-dalek",
+ "rand",
+ "serde",
+]
+
+[[package]]
+name = "atm0s-reverse-proxy-relayer"
+version = "0.1.0"
+dependencies = [
+ "async-std",
+ "async-trait",
+ "atm0s-reverse-proxy-protocol",
+ "atm0s-reverse-proxy-protocol-ed25519",
+ "atm0s-sdn",
+ "clap",
+ "futures",
+ "httparse",
+ "log",
+ "metrics",
+ "metrics-dashboard",
+ "poem",
+ "quinn",
+ "rcgen",
+ "rustls",
+ "serde",
+ "tls-parser",
+ "tracing-subscriber",
+ "yamux",
 ]
 
 [[package]]
@@ -2433,25 +2477,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "106dd99e98437432fed6519dedecfade6a06a73bb7b2a1e019fdd2bee5778d94"
 
 [[package]]
-name = "protocol"
-version = "0.1.0"
-dependencies = [
- "bincode",
- "serde",
-]
-
-[[package]]
-name = "protocol-ed25519"
-version = "0.1.0"
-dependencies = [
- "bincode",
- "ed25519-dalek",
- "protocol",
- "rand",
- "serde",
-]
-
-[[package]]
 name = "quanta"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2681,31 +2706,6 @@ name = "regex-syntax"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08c74e62047bb2de4ff487b251e4a92e24f48745648451635cec7d591162d9f"
-
-[[package]]
-name = "relayer"
-version = "0.1.0"
-dependencies = [
- "async-std",
- "async-trait",
- "atm0s-sdn",
- "clap",
- "futures",
- "httparse",
- "log",
- "metrics",
- "metrics-dashboard",
- "poem",
- "protocol",
- "protocol-ed25519",
- "quinn",
- "rcgen",
- "rustls",
- "serde",
- "tls-parser",
- "tracing-subscriber",
- "yamux",
-]
 
 [[package]]
 name = "rfc7239"

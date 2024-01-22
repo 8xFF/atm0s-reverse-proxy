@@ -1,6 +1,6 @@
 use std::{alloc::System, net::SocketAddr};
 
-use agent::{
+use atm0s_reverse_proxy_agent::{
     run_tunnel_connection, Connection, Protocol, QuicConnection, SubConnection, TcpConnection,
 };
 use clap::Parser;

@@ -1,4 +1,3 @@
-use atm0s_sdn::{NodeAliasId, NodeAliasSdk};
 #[cfg(feature = "expose-metrics")]
 use metrics_dashboard::build_dashboard_route;
 #[cfg(feature = "expose-metrics")]
@@ -33,6 +32,11 @@ pub use agent_listener::{
 pub use proxy_listener::cluster::{run_sdn, ProxyClusterListener, ProxyClusterTunnel};
 pub use proxy_listener::http::{ProxyHttpListener, ProxyHttpTunnel};
 pub use proxy_listener::{ProxyListener, ProxyTunnel};
+
+pub use atm0s_sdn::{
+    NodeAddr, NodeAliasId, NodeAliasSdk, NodeId, RouteRule, RpcBox, RpcEmitter, RpcError,
+    RpcRequest,
+};
 
 pub use tunnel::{tunnel_task, TunnelContext};
 

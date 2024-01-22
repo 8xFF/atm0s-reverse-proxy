@@ -1,6 +1,5 @@
 use protocol::key::AgentSigner;
 use serde::de::DeserializeOwned;
-use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{error::Error, net::SocketAddr};
@@ -23,7 +22,6 @@ impl SubConnection<RecvStream, SendStream> for QuicSubConnection {
 pub struct QuicConnection<RES> {
     response: RES,
     connection: quinn::Connection,
-    rpc_buf: [u8; 16000],
 }
 
 impl<RES: DeserializeOwned> QuicConnection<RES> {
@@ -54,7 +52,6 @@ impl<RES: DeserializeOwned> QuicConnection<RES> {
         Ok(Self {
             connection,
             response,
-            rpc_buf: [0u8; 16000],
         })
     }
 
@@ -63,22 +60,35 @@ impl<RES: DeserializeOwned> QuicConnection<RES> {
     }
 }
 
+pub async fn call_rpc(
+    connection: quinn::Connection,
+    req: Vec<u8>,
+) -> Result<Vec<u8>, Box<dyn Error>> {
+    let (mut send, mut recv) = connection.open_bi().await?;
+    send.write_all(&req).await?;
+    let mut rpc_buf = vec![0; 4096];
+    let buf_len = recv
+        .read(&mut rpc_buf)
+        .await?
+        .ok_or("read rpc response error")?;
+    rpc_buf.truncate(buf_len);
+    Ok(rpc_buf)
+}
+
 #[async_trait::async_trait]
 impl<RES: Send + Sync> Connection<QuicSubConnection, RecvStream, SendStream>
     for QuicConnection<RES>
 {
-    async fn rpc<REQ: Serialize + Send + Sync, RES2: DeserializeOwned + Send + Sync>(
+    fn rpc(
         &mut self,
-        req: REQ,
-    ) -> Result<RES2, Box<dyn Error>> {
-        let (mut send, mut recv) = self.connection.open_bi().await?;
-        send.write_all(&bincode::serialize(&req)?).await?;
-        let buf_len = recv
-            .read(&mut self.rpc_buf)
-            .await?
-            .ok_or("read rpc response error")?;
-        let res: RES2 = bincode::deserialize(&self.rpc_buf[..buf_len])?;
-        Ok(res)
+        req: Vec<u8>,
+        handler: Box<dyn FnOnce(Result<Vec<u8>, Box<dyn Error>>) + Send + Sync>,
+    ) {
+        let conn = self.connection.clone();
+        async_std::task::spawn(async move {
+            let res = call_rpc(conn, req).await;
+            handler(res);
+        });
     }
 
     async fn recv(&mut self) -> Result<QuicSubConnection, Box<dyn Error>> {

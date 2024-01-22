@@ -1,5 +1,5 @@
 [package]
-name = "agent"
+name = "atm0s-reverse-proxy-agent"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,12 +11,12 @@ async-trait = "0.1.74"
 clap = { version = "4.4.11", features = ["derive", "env"] }
 futures = "0.3.4"
 log = "0.4.20"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter", "std"] }
+tracing-subscriber = { version = "0.3.18", features = ["env-filter", "std"], optional = true }
 yamux = "0.13.1"
 bincode = "1.3.3"
 serde = { version = "1.0.193", features = ["derive"] }
-protocol = { path = "../protocol" }
-protocol-ed25519 = { path = "../protocol_ed25519", optional = true }
+protocol = { path = "../protocol", package = "atm0s-reverse-proxy-protocol" }
+protocol-ed25519 = { path = "../protocol_ed25519", package = "atm0s-reverse-proxy-protocol-ed25519", optional = true }
 quinn = { version = "0.10.2", default-features = false, features = ["native-certs", "tls-rustls", "log", "runtime-async-std", "futures-io", "ring"] }
 rustls = { version = "0.21.0", default-features = false, features = ["quic", "dangerous_configuration"] }
 
@@ -27,4 +27,5 @@ lto = true
 codegen-units = 1
 
 [features]
-default = ["protocol-ed25519"]
+default = ["binary"]
+binary = ["protocol-ed25519", "tracing-subscriber"]

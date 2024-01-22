@@ -4,7 +4,6 @@ use std::error::Error;
 
 use clap::ValueEnum;
 use futures::{AsyncRead, AsyncWrite};
-use serde::{de::DeserializeOwned, Serialize};
 
 pub mod quic;
 pub mod tcp;
@@ -23,9 +22,10 @@ pub trait SubConnection<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>: Send + Syn
 pub trait Connection<S: SubConnection<R, W>, R: AsyncRead + Unpin, W: AsyncWrite + Unpin>:
     Send + Sync
 {
-    async fn rpc<REQ: Serialize + Send + Sync, RES: DeserializeOwned + Send + Sync>(
+    fn rpc(
         &mut self,
-        req: REQ,
-    ) -> Result<RES, Box<dyn Error>>;
+        req: Vec<u8>,
+        handler: Box<dyn FnOnce(Result<Vec<u8>, Box<dyn Error>>) + Send + Sync>,
+    );
     async fn recv(&mut self) -> Result<S, Box<dyn Error>>;
 }
