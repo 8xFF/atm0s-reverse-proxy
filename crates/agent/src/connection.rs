@@ -22,10 +22,6 @@ pub trait SubConnection<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>: Send + Syn
 pub trait Connection<S: SubConnection<R, W>, R: AsyncRead + Unpin, W: AsyncWrite + Unpin>:
     Send + Sync
 {
-    fn rpc(
-        &mut self,
-        req: Vec<u8>,
-        handler: Box<dyn FnOnce(Result<Vec<u8>, Box<dyn Error>>) + Send + Sync>,
-    );
+    async fn create_outgoing(&mut self) -> Result<S, Box<dyn Error>>;
     async fn recv(&mut self) -> Result<S, Box<dyn Error>>;
 }

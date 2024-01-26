@@ -62,11 +62,7 @@ impl<RES: Send + Sync>
     Connection<TcpSubConnection, ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>>
     for TcpConnection<RES>
 {
-    fn rpc(
-        &mut self,
-        _req: Vec<u8>,
-        _handler: Box<dyn FnOnce(Result<Vec<u8>, Box<dyn Error>>) + Send + Sync>,
-    ) {
+    async fn create_outgoing(&mut self) -> Result<TcpSubConnection, Box<dyn Error>> {
         todo!()
     }
 

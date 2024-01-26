@@ -26,7 +26,8 @@ mod utils;
 pub use agent_listener::quic::{AgentQuicConnection, AgentQuicListener, AgentQuicSubConnection};
 pub use agent_listener::tcp::{AgentTcpConnection, AgentTcpListener, AgentTcpSubConnection};
 pub use agent_listener::{
-    AgentConnection, AgentListener, AgentRpcHandler, AgentRpcHandlerDummy, AgentSubConnection,
+    AgentConnection, AgentConnectionHandler, AgentIncommingConnHandlerDummy, AgentListener,
+    AgentSubConnection,
 };
 
 pub use proxy_listener::cluster::{run_sdn, ProxyClusterListener, ProxyClusterTunnel};
@@ -34,8 +35,8 @@ pub use proxy_listener::http::{ProxyHttpListener, ProxyHttpTunnel};
 pub use proxy_listener::{ProxyListener, ProxyTunnel};
 
 pub use atm0s_sdn::{
-    NodeAddr, NodeAliasId, NodeAliasSdk, NodeId, RouteRule, RpcBox, RpcEmitter, RpcError,
-    RpcRequest,
+    virtual_socket::*, NodeAddr, NodeAliasError, NodeAliasId, NodeAliasResult, NodeAliasSdk,
+    NodeId, RouteRule, RpcBox, RpcEmitter, RpcError, RpcRequest,
 };
 
 pub use tunnel::{tunnel_task, TunnelContext};
@@ -44,7 +45,7 @@ pub async fn run_agent_connection<AG, S, R, W>(
     agent_connection: AG,
     agents: Arc<RwLock<HashMap<NodeAliasId, async_std::channel::Sender<Box<dyn ProxyTunnel>>>>>,
     node_alias_sdk: NodeAliasSdk,
-    agent_rpc_handler: Arc<dyn AgentRpcHandler>,
+    agent_rpc_handler: Arc<dyn AgentConnectionHandler<S, R, W>>,
 ) where
     AG: AgentConnection<S, R, W> + 'static,
     S: AgentSubConnection<R, W> + 'static,

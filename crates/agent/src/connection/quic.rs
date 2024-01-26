@@ -60,35 +60,13 @@ impl<RES: DeserializeOwned> QuicConnection<RES> {
     }
 }
 
-pub async fn call_rpc(
-    connection: quinn::Connection,
-    req: Vec<u8>,
-) -> Result<Vec<u8>, Box<dyn Error>> {
-    let (mut send, mut recv) = connection.open_bi().await?;
-    send.write_all(&req).await?;
-    let mut rpc_buf = vec![0; 4096];
-    let buf_len = recv
-        .read(&mut rpc_buf)
-        .await?
-        .ok_or("read rpc response error")?;
-    rpc_buf.truncate(buf_len);
-    Ok(rpc_buf)
-}
-
 #[async_trait::async_trait]
 impl<RES: Send + Sync> Connection<QuicSubConnection, RecvStream, SendStream>
     for QuicConnection<RES>
 {
-    fn rpc(
-        &mut self,
-        req: Vec<u8>,
-        handler: Box<dyn FnOnce(Result<Vec<u8>, Box<dyn Error>>) + Send + Sync>,
-    ) {
-        let conn = self.connection.clone();
-        async_std::task::spawn(async move {
-            let res = call_rpc(conn, req).await;
-            handler(res);
-        });
+    async fn create_outgoing(&mut self) -> Result<QuicSubConnection, Box<dyn Error>> {
+        let (send, recv) = self.connection.open_bi().await?;
+        Ok(QuicSubConnection { send, recv })
     }
 
     async fn recv(&mut self) -> Result<QuicSubConnection, Box<dyn Error>> {

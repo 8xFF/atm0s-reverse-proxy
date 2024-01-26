@@ -7,7 +7,7 @@ use atm0s_sdn::{
     LayersSpreadRouterSyncHandlerEvent, ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent,
     ManualHandlerEvent, NetworkPlane, NetworkPlaneConfig, NodeAddrBuilder, NodeAliasBehavior,
     NodeAliasSdk, PubsubServiceBehaviour, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent,
-    RpcBox, SharedRouter, SystemTimer, UdpTransport,
+    SharedRouter, SystemTimer, UdpTransport,
 };
 use atm0s_sdn::{NodeAddr, NodeId};
 use futures::{AsyncRead, AsyncWrite};
@@ -15,8 +15,6 @@ use protocol::cluster::{ClusterTunnelRequest, ClusterTunnelResponse};
 use quinn::{Connecting, Endpoint};
 
 use super::{ProxyListener, ProxyTunnel};
-
-const RPC_SERVICE_ID: u8 = 100;
 
 #[derive(convert_enum::From, convert_enum::TryInto)]
 enum NodeBehaviorEvent {
@@ -44,7 +42,7 @@ pub async fn run_sdn(
     sdn_port: u16,
     secret_key: String,
     seeds: Vec<NodeAddr>,
-) -> (ProxyClusterListener, NodeAliasSdk, VirtualNet, RpcBox) {
+) -> (ProxyClusterListener, NodeAliasSdk, VirtualNet) {
     let secure = Arc::new(atm0s_sdn::StaticKeySecure::new(&secret_key));
     let mut node_addr_builder = NodeAddrBuilder::new(node_id);
     let udp_socket = UdpTransport::prepare(sdn_port, &mut node_addr_builder).await;
@@ -67,7 +65,6 @@ pub async fn run_sdn(
     let spreads_layer_router = LayersSpreadRouterSyncBehavior::new(router.clone());
     let router = Arc::new(router);
 
-    let mut rpc_box = RpcBox::new(node_id, RPC_SERVICE_ID, timer.clone());
     let kv_sdk = KeyValueSdk::new();
     let kv_behaviour = KeyValueBehavior::new(node_id, 1000, Some(Box::new(kv_sdk)));
     let (pubsub_behavior, pubsub_sdk) = PubsubServiceBehaviour::new(node_id, timer.clone());
@@ -85,7 +82,6 @@ pub async fn run_sdn(
             Box::new(virtual_socket),
             Box::new(pubsub_behavior),
             Box::new(node_alias_behavior),
-            Box::new(rpc_box.behaviour()),
         ],
         transport: Box::new(transport),
         timer,
@@ -103,7 +99,6 @@ pub async fn run_sdn(
         ProxyClusterListener::new(&virtual_socket_sdk),
         node_alias_sdk,
         virtual_socket_sdk,
-        rpc_box,
     )
 }
 

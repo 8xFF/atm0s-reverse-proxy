@@ -1,6 +1,6 @@
 //! Connector is server which accept connection from agent and wait msg from user.
 
-use std::{error::Error, sync::Arc};
+use std::error::Error;
 
 use futures::{AsyncRead, AsyncWrite};
 
@@ -17,7 +17,7 @@ pub trait AgentConnection<S: AgentSubConnection<R, W>, R: AsyncRead + Unpin, W: 
 {
     fn domain(&self) -> String;
     async fn create_sub_connection(&mut self) -> Result<S, Box<dyn Error>>;
-    async fn recv(&mut self, rpc_handler: &Arc<dyn AgentRpcHandler>) -> Result<(), Box<dyn Error>>;
+    async fn recv(&mut self) -> Result<S, Box<dyn Error>>;
 }
 
 #[async_trait::async_trait]
@@ -32,16 +32,45 @@ pub trait AgentListener<
 }
 
 #[async_trait::async_trait]
-pub trait AgentRpcHandler: Send + Sync {
-    async fn handle(&self, agent_domain: &str, req: &[u8]) -> Vec<u8>;
+pub trait AgentConnectionHandler<
+    S: AgentSubConnection<R, W>,
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+>: Send + Sync
+{
+    async fn handle(&self, agent_domain: &str, connection: S) -> Result<(), Box<dyn Error>>;
 }
 
-#[derive(Default)]
-pub struct AgentRpcHandlerDummy {}
+pub struct AgentIncommingConnHandlerDummy<
+    S: AgentSubConnection<R, W>,
+    R: AsyncRead + Send + Sync + Unpin,
+    W: AsyncWrite + Send + Sync + Unpin,
+> {
+    _phantom: std::marker::PhantomData<(S, R, W)>,
+}
+
+impl<
+        S: AgentSubConnection<R, W>,
+        R: AsyncRead + Send + Sync + Unpin,
+        W: AsyncWrite + Send + Sync + Unpin,
+    > Default for AgentIncommingConnHandlerDummy<S, R, W>
+{
+    fn default() -> Self {
+        Self {
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
 
 #[async_trait::async_trait]
-impl AgentRpcHandler for AgentRpcHandlerDummy {
-    async fn handle(&self, _agent_domain: &str, _req: &[u8]) -> Vec<u8> {
-        vec![]
+impl<
+        S: AgentSubConnection<R, W>,
+        R: AsyncRead + Send + Sync + Unpin,
+        W: AsyncWrite + Send + Sync + Unpin,
+    > AgentConnectionHandler<S, R, W> for AgentIncommingConnHandlerDummy<S, R, W>
+{
+    async fn handle(&self, agent_domain: &str, _connection: S) -> Result<(), Box<dyn Error>> {
+        log::info!("on connection from agent {}", agent_domain);
+        Ok(())
     }
 }

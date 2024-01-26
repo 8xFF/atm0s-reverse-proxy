@@ -3,7 +3,6 @@ use std::{
     fmt::Debug,
     net::SocketAddr,
     pin::Pin,
-    sync::Arc,
     task::{Context, Poll},
 };
 
@@ -15,7 +14,7 @@ use futures::{
 use protocol::key::ClusterValidator;
 use serde::de::DeserializeOwned;
 
-use super::{AgentConnection, AgentListener, AgentRpcHandler, AgentSubConnection};
+use super::{AgentConnection, AgentListener, AgentSubConnection};
 
 pub struct AgentTcpListener<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Debug> {
     tcp_listener: TcpListener,
@@ -125,15 +124,14 @@ impl AgentConnection<AgentTcpSubConnection, ReadHalf<yamux::Stream>, WriteHalf<y
         })
     }
 
-    async fn recv(
-        &mut self,
-        _rpc_handler: &Arc<dyn AgentRpcHandler>,
-    ) -> Result<(), Box<dyn Error>> {
-        //TODO handle rpc
-        RecvStreamsClient {
-            connection: &mut self.connector,
+    async fn recv(&mut self) -> Result<AgentTcpSubConnection, Box<dyn Error>> {
+        loop {
+            //TODO handle sub connection
+            RecvStreamsClient {
+                connection: &mut self.connector,
+            }
+            .await?;
         }
-        .await
     }
 }
 

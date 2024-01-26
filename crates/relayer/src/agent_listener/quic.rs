@@ -4,7 +4,7 @@ use protocol::key::ClusterValidator;
 use quinn::{Endpoint, RecvStream, SendStream, ServerConfig};
 use serde::de::DeserializeOwned;
 
-use super::{AgentConnection, AgentListener, AgentRpcHandler, AgentSubConnection};
+use super::{AgentConnection, AgentListener, AgentSubConnection};
 
 pub struct AgentQuicListener<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Debug> {
     endpoint: Endpoint,
@@ -111,16 +111,9 @@ impl AgentConnection<AgentQuicSubConnection, RecvStream, SendStream> for AgentQu
         Ok(AgentQuicSubConnection { send, recv })
     }
 
-    async fn recv(&mut self, rpc_handler: &Arc<dyn AgentRpcHandler>) -> Result<(), Box<dyn Error>> {
+    async fn recv(&mut self) -> Result<AgentQuicSubConnection, Box<dyn Error>> {
         let (send, recv) = self.conn.accept_bi().await?;
-        let domain = self.domain.clone();
-        let rpc_handle = rpc_handler.clone();
-        async_std::task::spawn(async move {
-            if let Err(e) = handle_rpc(domain, send, recv, rpc_handle).await {
-                log::error!("handle_rpc error: {}", e);
-            }
-        });
-        Ok(())
+        Ok(AgentQuicSubConnection { send, recv })
     }
 }
 
@@ -154,17 +147,4 @@ fn configure_server() -> Result<(ServerConfig, Vec<u8>), Box<dyn Error>> {
     transport_config.max_concurrent_uni_streams(0_u8.into());
 
     Ok((server_config, cert_der))
-}
-
-async fn handle_rpc(
-    domain: String,
-    mut send: SendStream,
-    mut recv: RecvStream,
-    handler: Arc<dyn AgentRpcHandler>,
-) -> Result<(), Box<dyn Error>> {
-    let mut buf = [0; 4096];
-    let buf_len = recv.read(&mut buf).await?.ok_or("No incomming data")?;
-    let res = handler.handle(&domain, &buf[..buf_len]).await;
-    send.write_all(&res).await?;
-    Ok(())
 }

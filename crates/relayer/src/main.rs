@@ -1,6 +1,6 @@
 use atm0s_reverse_proxy_relayer::{
-    run_agent_connection, run_sdn, tunnel_task, AgentListener, AgentQuicListener,
-    AgentRpcHandlerDummy, AgentTcpListener, ProxyHttpListener, ProxyListener, TunnelContext,
+    run_agent_connection, run_sdn, tunnel_task, AgentIncommingConnHandlerDummy, AgentListener,
+    AgentQuicListener, AgentTcpListener, ProxyHttpListener, ProxyListener, TunnelContext,
     METRICS_AGENT_COUNT, METRICS_AGENT_LIVE, METRICS_PROXY_COUNT, METRICS_PROXY_LIVE,
 };
 use atm0s_sdn::{NodeAddr, NodeId};
@@ -100,7 +100,7 @@ async fn main() {
             .await;
     });
 
-    let (mut cluster_endpoint, node_alias_sdk, virtual_net, _rpc_box) = run_sdn(
+    let (mut cluster_endpoint, node_alias_sdk, virtual_net) = run_sdn(
         args.sdn_node_id,
         args.sdn_port,
         args.sdn_secret_key,
@@ -108,13 +108,14 @@ async fn main() {
     )
     .await;
 
-    let agent_rpc_handler = Arc::new(AgentRpcHandlerDummy::default());
+    let agent_rpc_handler_quic = Arc::new(AgentIncommingConnHandlerDummy::default());
+    let agent_rpc_handler_tcp = Arc::new(AgentIncommingConnHandlerDummy::default());
 
     loop {
         select! {
             e = quic_agent_listener.recv().fuse() => match e {
                 Ok(agent_connection) => {
-                    run_agent_connection(agent_connection, agents.clone(), node_alias_sdk.clone(), agent_rpc_handler.clone()).await;
+                    run_agent_connection(agent_connection, agents.clone(), node_alias_sdk.clone(), agent_rpc_handler_quic.clone()).await;
                 }
                 Err(e) => {
                     log::error!("agent_listener error {}", e);
@@ -123,7 +124,7 @@ async fn main() {
             },
             e = tcp_agent_listener.recv().fuse() => match e {
                 Ok(agent_connection) => {
-                    run_agent_connection(agent_connection, agents.clone(), node_alias_sdk.clone(), agent_rpc_handler.clone()).await;
+                    run_agent_connection(agent_connection, agents.clone(), node_alias_sdk.clone(), agent_rpc_handler_tcp.clone()).await;
                 }
                 Err(e) => {
                     log::error!("agent_listener error {}", e);
