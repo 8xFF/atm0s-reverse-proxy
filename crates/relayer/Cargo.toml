@@ -22,7 +22,7 @@ metrics = { version = "0.21.1" }
 quinn = { version = "0.10.2", default-features = false, features = ["native-certs", "tls-rustls", "log", "runtime-async-std", "futures-io", "ring"] }
 rustls = { version = "0.21.0", default-features = false, features = ["quic", "dangerous_configuration"] }
 rcgen = "0.12.0"
-atm0s-sdn = { version = "0.1.7", features = ["all"]}
+atm0s-sdn = { version = "0.1.10", features = ["all"]}
 
 [features]
 default = ["binary"]
