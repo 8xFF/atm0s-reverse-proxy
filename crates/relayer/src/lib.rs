@@ -2,6 +2,7 @@
 use metrics_dashboard::build_dashboard_route;
 #[cfg(feature = "expose-metrics")]
 use poem::{listener::TcpListener, middleware::Tracing, EndpointExt as _, Route, Server};
+use proxy_listener::cluster::AliasSdk;
 use std::{collections::HashMap, sync::Arc};
 
 use async_std::sync::RwLock;
@@ -34,17 +35,12 @@ pub use proxy_listener::cluster::{run_sdn, ProxyClusterListener, ProxyClusterTun
 pub use proxy_listener::http::{ProxyHttpListener, ProxyHttpTunnel};
 pub use proxy_listener::{ProxyListener, ProxyTunnel};
 
-pub use atm0s_sdn::{
-    virtual_socket::*, NodeAddr, NodeAliasError, NodeAliasId, NodeAliasResult, NodeAliasSdk,
-    NodeId, RouteRule, RpcBox, RpcEmitter, RpcError, RpcRequest,
-};
-
 pub use tunnel::{tunnel_task, TunnelContext};
 
 pub async fn run_agent_connection<AG, S, R, W>(
     agent_connection: AG,
-    agents: Arc<RwLock<HashMap<NodeAliasId, async_std::channel::Sender<Box<dyn ProxyTunnel>>>>>,
-    node_alias_sdk: NodeAliasSdk,
+    agents: Arc<RwLock<HashMap<u64, async_std::channel::Sender<Box<dyn ProxyTunnel>>>>>,
+    node_alias_sdk: AliasSdk,
     agent_rpc_handler: Arc<dyn AgentConnectionHandler<S, R, W>>,
 ) where
     AG: AgentConnection<S, R, W> + 'static,
@@ -62,7 +58,7 @@ pub async fn run_agent_connection<AG, S, R, W>(
         .write()
         .await
         .insert(home_id.clone(), proxy_tunnel_tx);
-    node_alias_sdk.register(home_id.clone());
+    node_alias_sdk.register_alias(home_id.clone()).await;
     let agents = agents.clone();
     async_std::task::spawn(async move {
         increment_gauge!(METRICS_AGENT_LIVE, 1.0);
@@ -77,7 +73,9 @@ pub async fn run_agent_connection<AG, S, R, W>(
             }
         }
         agents.write().await.remove(&home_id);
-        node_alias_sdk.unregister(home_id_from_domain(&domain));
+        node_alias_sdk
+            .unregister_alias(home_id_from_domain(&domain))
+            .await;
         log::info!("agent_worker exit for domain: {}", domain);
         decrement_gauge!(METRICS_AGENT_LIVE, 1.0);
     });

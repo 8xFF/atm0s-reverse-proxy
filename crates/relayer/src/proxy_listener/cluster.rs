@@ -1,105 +1,163 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
-use atm0s_sdn::virtual_socket::{create_vnet, make_insecure_quinn_server, VirtualNet};
 use atm0s_sdn::{
-    convert_enum, KeyValueBehavior, KeyValueBehaviorEvent, KeyValueHandlerEvent, KeyValueSdk,
-    KeyValueSdkEvent, LayersSpreadRouterSyncBehavior, LayersSpreadRouterSyncBehaviorEvent,
-    LayersSpreadRouterSyncHandlerEvent, ManualBehavior, ManualBehaviorConf, ManualBehaviorEvent,
-    ManualHandlerEvent, NetworkPlane, NetworkPlaneConfig, NodeAddrBuilder, NodeAliasBehavior,
-    NodeAliasSdk, PubsubServiceBehaviour, PubsubServiceBehaviourEvent, PubsubServiceHandlerEvent,
-    SharedRouter, SystemTimer, UdpTransport,
+    builder::SdnBuilder,
+    features::{
+        alias::{self, FoundLocation},
+        socket, FeaturesControl, FeaturesEvent,
+    },
+    sans_io_runtime::{backend::PollingBackend, Owner},
+    services::visualization,
+    tasks::{SdnExtIn, SdnExtOut},
+    NodeAddr, NodeId, ServiceBroadcastLevel,
 };
-use atm0s_sdn::{NodeAddr, NodeId};
 use futures::{AsyncRead, AsyncWrite};
 use protocol::cluster::{ClusterTunnelRequest, ClusterTunnelResponse};
 use quinn::{Connecting, Endpoint};
 
+use self::{
+    alias_async::AliasAsyncEvent,
+    quinn_utils::make_insecure_quinn_server,
+    vnet::{NetworkPkt, OutEvent},
+};
+
 use super::{ProxyListener, ProxyTunnel};
 
-#[derive(convert_enum::From, convert_enum::TryInto)]
-enum NodeBehaviorEvent {
-    Manual(ManualBehaviorEvent),
-    LayersSpreadRouterSync(LayersSpreadRouterSyncBehaviorEvent),
-    KeyValue(KeyValueBehaviorEvent),
-    Pubsub(PubsubServiceBehaviourEvent),
-}
+mod alias_async;
+mod quinn_utils;
+mod service;
+mod vnet;
+mod vsocket;
 
-#[derive(convert_enum::From, convert_enum::TryInto)]
-enum NodeHandleEvent {
-    Manual(ManualHandlerEvent),
-    LayersSpreadRouterSync(LayersSpreadRouterSyncHandlerEvent),
-    KeyValue(KeyValueHandlerEvent),
-    Pubsub(PubsubServiceHandlerEvent),
-}
+pub use alias_async::AliasSdk;
+pub use quinn_utils::make_insecure_quinn_client;
+pub use vnet::VirtualNetwork;
+pub use vsocket::VirtualUdpSocket;
 
-#[derive(convert_enum::From, convert_enum::TryInto)]
-enum NodeSdkEvent {
-    KeyValue(KeyValueSdkEvent),
-}
+type SC = visualization::Control;
+type SE = visualization::Event;
+type TC = ();
+type TW = ();
 
 pub async fn run_sdn(
     node_id: NodeId,
     sdn_port: u16,
     secret_key: String,
     seeds: Vec<NodeAddr>,
-) -> (ProxyClusterListener, NodeAliasSdk, VirtualNet) {
-    let secure = Arc::new(atm0s_sdn::StaticKeySecure::new(&secret_key));
-    let mut node_addr_builder = NodeAddrBuilder::new(node_id);
-    let udp_socket = UdpTransport::prepare(sdn_port, &mut node_addr_builder).await;
-    let transport = UdpTransport::new(node_addr_builder.addr(), udp_socket, secure.clone());
+    workers: usize,
+) -> (ProxyClusterListener, AliasSdk, VirtualNetwork) {
+    let (mut vnet, tx, rx) = vnet::VirtualNetwork::new(node_id);
+    let (mut alias_async, alias_sdk) = alias_async::AliasAsync::new();
 
-    let node_addr = node_addr_builder.addr();
-    log::info!("atm0s-sdn listen on addr {}", node_addr);
+    let server_socket = vnet.udp_socket(443).await;
 
-    let timer = Arc::new(SystemTimer());
-    let router = SharedRouter::new(node_id);
+    let mut builder = SdnBuilder::<SC, SE, TC, TW>::new(node_id, sdn_port, vec![]);
 
-    let manual = ManualBehavior::new(ManualBehaviorConf {
-        node_id,
-        node_addr,
-        seeds,
-        local_tags: vec!["relayer".to_string()],
-        connect_tags: vec!["relayer".to_string()],
-    });
+    builder.set_manual_discovery(vec!["tunnel".to_string()], vec!["tunnel".to_string()]);
+    builder.set_visualization_collector(false);
+    builder.add_service(Arc::new(service::RelayServiceBuilder::default()));
 
-    let spreads_layer_router = LayersSpreadRouterSyncBehavior::new(router.clone());
-    let router = Arc::new(router);
-
-    let kv_sdk = KeyValueSdk::new();
-    let kv_behaviour = KeyValueBehavior::new(node_id, 1000, Some(Box::new(kv_sdk)));
-    let (pubsub_behavior, pubsub_sdk) = PubsubServiceBehaviour::new(node_id, timer.clone());
-    let (node_alias_behavior, node_alias_sdk) = NodeAliasBehavior::new(node_id, pubsub_sdk);
-    let (virtual_socket, virtual_socket_sdk) = create_vnet(node_id, router.clone());
-
-    let plan_cfg = NetworkPlaneConfig {
-        router,
-        node_id,
-        tick_ms: 1000,
-        behaviors: vec![
-            Box::new(manual),
-            Box::new(spreads_layer_router),
-            Box::new(kv_behaviour),
-            Box::new(virtual_socket),
-            Box::new(pubsub_behavior),
-            Box::new(node_alias_behavior),
-        ],
-        transport: Box::new(transport),
-        timer,
-    };
-
-    let mut plane = NetworkPlane::<NodeBehaviorEvent, NodeHandleEvent, NodeSdkEvent>::new(plan_cfg);
+    for seed in seeds {
+        builder.add_seed(seed);
+    }
 
     async_std::task::spawn(async move {
-        plane.started();
-        while let Ok(_) = plane.recv().await {}
-        plane.stopped();
+        let mut controller = builder.build::<PollingBackend<128, 128>>(workers);
+        while controller.process().is_some() {
+            while let Ok(c) = rx.try_recv() {
+                // log::info!("Command: {:?}", c);
+                match c {
+                    OutEvent::Bind(port) => {
+                        log::info!("Bind port: {}", port);
+                        controller.send_to(
+                            Owner::worker(0),
+                            SdnExtIn::FeaturesControl(FeaturesControl::Socket(
+                                socket::Control::Bind(port),
+                            )),
+                        );
+                    }
+                    OutEvent::Pkt(pkt) => {
+                        let send = socket::Control::SendTo(
+                            pkt.local_port,
+                            pkt.remote,
+                            pkt.remote_port,
+                            pkt.data,
+                            pkt.meta,
+                        );
+                        controller.send_to(
+                            Owner::worker(0),
+                            SdnExtIn::FeaturesControl(FeaturesControl::Socket(send)),
+                        );
+                    }
+                    OutEvent::Unbind(port) => {
+                        log::info!("Unbind port: {}", port);
+                        controller.send_to(
+                            Owner::worker(0),
+                            SdnExtIn::FeaturesControl(FeaturesControl::Socket(
+                                socket::Control::Unbind(port),
+                            )),
+                        );
+                    }
+                }
+            }
+            while let Some(event) = alias_async.pop_request() {
+                let control = match event {
+                    AliasAsyncEvent::Query(alias) => alias::Control::Query {
+                        alias,
+                        service: service::SERVICE_ID,
+                        level: ServiceBroadcastLevel::Global,
+                    },
+                    AliasAsyncEvent::Register(alias) => alias::Control::Register {
+                        alias,
+                        service: service::SERVICE_ID,
+                        level: ServiceBroadcastLevel::Global,
+                    },
+                    AliasAsyncEvent::Unregister(alias) => alias::Control::Unregister { alias },
+                };
+                controller.send_to(
+                    Owner::worker(0),
+                    SdnExtIn::FeaturesControl(FeaturesControl::Alias(control)),
+                );
+            }
+            while let Some(event) = controller.pop_event() {
+                // log::info!("Event: {:?}", event);
+                match event {
+                    SdnExtOut::FeaturesEvent(FeaturesEvent::Socket(socket::Event::RecvFrom(
+                        local_port,
+                        remote,
+                        remote_port,
+                        data,
+                        meta,
+                    ))) => {
+                        if let Err(e) = tx.try_send(NetworkPkt {
+                            local_port,
+                            remote,
+                            remote_port,
+                            data,
+                            meta,
+                        }) {
+                            log::error!("Failed to send to tx: {:?}", e);
+                        }
+                    }
+                    SdnExtOut::FeaturesEvent(FeaturesEvent::Alias(alias::Event::QueryResult(
+                        alias,
+                        res,
+                    ))) => {
+                        let res = res.map(|a| match a {
+                            FoundLocation::Local => node_id,
+                            FoundLocation::RemoteHint(node) => node,
+                            FoundLocation::RemoteScan(node) => node,
+                        });
+                        alias_async.push_response(alias, res);
+                    }
+                    _ => {}
+                }
+            }
+            async_std::task::sleep(Duration::from_millis(1)).await;
+        }
     });
 
-    (
-        ProxyClusterListener::new(&virtual_socket_sdk),
-        node_alias_sdk,
-        virtual_socket_sdk,
-    )
+    (ProxyClusterListener::new(server_socket), alias_sdk, vnet)
 }
 
 pub struct ProxyClusterListener {
@@ -107,10 +165,8 @@ pub struct ProxyClusterListener {
 }
 
 impl ProxyClusterListener {
-    pub fn new(sdk: &VirtualNet) -> Self {
-        let server =
-            make_insecure_quinn_server(sdk.create_udp_socket(80, 1000).expect("")).expect("");
-
+    pub fn new(socket: VirtualUdpSocket) -> Self {
+        let server = make_insecure_quinn_server(socket).expect("");
         Self { server }
     }
 }
@@ -118,9 +174,11 @@ impl ProxyClusterListener {
 #[async_trait::async_trait]
 impl ProxyListener for ProxyClusterListener {
     async fn recv(&mut self) -> Option<Box<dyn ProxyTunnel>> {
+        let connecting = self.server.accept().await?;
+        log::info!("incoming connection from {}", connecting.remote_address());
         Some(Box::new(ProxyClusterTunnel {
             domain: "".to_string(),
-            connecting: Some(self.server.accept().await?),
+            connecting: Some(connecting),
             streams: None,
         }))
     }
@@ -138,8 +196,11 @@ pub struct ProxyClusterTunnel {
 #[async_trait::async_trait]
 impl ProxyTunnel for ProxyClusterTunnel {
     async fn wait(&mut self) -> Option<()> {
-        let connection = self.connecting.take()?.await.ok()?;
+        let connecting = self.connecting.take()?;
+        let connection = connecting.await.ok()?;
+        log::info!("incoming connection from: {}", connection.remote_address());
         let (mut send, mut recv) = connection.accept_bi().await.ok()?;
+        log::info!("accepted bi stream from: {}", connection.remote_address());
         let mut req_buf = [0; 1500];
         let req_size = recv.read(&mut req_buf).await.ok()??;
         let req = ClusterTunnelRequest::try_from(&req_buf[..req_size]).ok()?;

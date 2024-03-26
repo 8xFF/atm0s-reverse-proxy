@@ -55,6 +55,10 @@ struct Args {
     /// atm0s-sdn seed address
     #[arg(env, long)]
     sdn_seeds: Vec<NodeAddr>,
+
+    /// atm0s-sdn workers
+    #[arg(env, long, default_value_t = 1)]
+    sdn_workers: usize,
 }
 
 #[async_std::main]
@@ -100,11 +104,12 @@ async fn main() {
             .await;
     });
 
-    let (mut cluster_endpoint, node_alias_sdk, virtual_net) = run_sdn(
+    let (mut cluster_endpoint, alias_sdk, mut virtual_net) = run_sdn(
         args.sdn_node_id,
         args.sdn_port,
         args.sdn_secret_key,
         args.sdn_seeds,
+        args.sdn_workers,
     )
     .await;
 
@@ -115,7 +120,7 @@ async fn main() {
         select! {
             e = quic_agent_listener.recv().fuse() => match e {
                 Ok(agent_connection) => {
-                    run_agent_connection(agent_connection, agents.clone(), node_alias_sdk.clone(), agent_rpc_handler_quic.clone()).await;
+                    run_agent_connection(agent_connection, agents.clone(), alias_sdk.clone(), agent_rpc_handler_quic.clone()).await;
                 }
                 Err(e) => {
                     log::error!("agent_listener error {}", e);
@@ -124,7 +129,7 @@ async fn main() {
             },
             e = tcp_agent_listener.recv().fuse() => match e {
                 Ok(agent_connection) => {
-                    run_agent_connection(agent_connection, agents.clone(), node_alias_sdk.clone(), agent_rpc_handler_tcp.clone()).await;
+                    run_agent_connection(agent_connection, agents.clone(), alias_sdk.clone(), agent_rpc_handler_tcp.clone()).await;
                 }
                 Err(e) => {
                     log::error!("agent_listener error {}", e);
@@ -133,7 +138,8 @@ async fn main() {
             },
             e = proxy_http_listener.recv().fuse() => match e {
                 Some(proxy_tunnel) => {
-                    async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(node_alias_sdk.clone(), virtual_net.clone())));
+                    let socket = virtual_net.udp_socket(0).await;
+                    async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket)));
                 }
                 None => {
                     log::error!("proxy_http_listener.recv()");
@@ -142,7 +148,8 @@ async fn main() {
             },
             e = proxy_tls_listener.recv().fuse() => match e {
                 Some(proxy_tunnel) => {
-                    async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(node_alias_sdk.clone(), virtual_net.clone())));
+                    let socket = virtual_net.udp_socket(0).await;
+                    async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket)));
                 }
                 None => {
                     log::error!("proxy_http_listener.recv()");
@@ -156,6 +163,13 @@ async fn main() {
                 None => {
                     log::error!("cluster_endpoint.accept()");
                     exit(3);
+                }
+            },
+            e = virtual_net.recv().fuse() => match e {
+                Some(()) => {}
+                None => {
+                    log::error!("virtual_net.recv()");
+                    exit(4);
                 }
             }
         }
