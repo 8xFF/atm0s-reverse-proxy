@@ -2,7 +2,6 @@
 use metrics_dashboard::build_dashboard_route;
 #[cfg(feature = "expose-metrics")]
 use poem::{listener::TcpListener, middleware::Tracing, EndpointExt as _, Route, Server};
-use proxy_listener::cluster::AliasSdk;
 use std::{collections::HashMap, sync::Arc};
 
 use async_std::sync::RwLock;
@@ -30,6 +29,12 @@ pub use agent_listener::{
     AgentConnection, AgentConnectionHandler, AgentIncommingConnHandlerDummy, AgentListener,
     AgentSubConnection,
 };
+pub use atm0s_sdn;
+pub use proxy_listener::cluster::{
+    make_insecure_quinn_client, make_insecure_quinn_server, AliasSdk, VirtualNetwork,
+    VirtualUdpSocket,
+};
+pub use quinn;
 
 pub use proxy_listener::cluster::{run_sdn, ProxyClusterListener, ProxyClusterTunnel};
 pub use proxy_listener::http::{ProxyHttpListener, ProxyHttpTunnel};

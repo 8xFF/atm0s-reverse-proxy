@@ -15,11 +15,8 @@ use futures::{AsyncRead, AsyncWrite};
 use protocol::cluster::{ClusterTunnelRequest, ClusterTunnelResponse};
 use quinn::{Connecting, Endpoint};
 
-use self::{
-    alias_async::AliasAsyncEvent,
-    quinn_utils::make_insecure_quinn_server,
-    vnet::{NetworkPkt, OutEvent},
-};
+use alias_async::AliasAsyncEvent;
+use vnet::{NetworkPkt, OutEvent};
 
 use super::{ProxyListener, ProxyTunnel};
 
@@ -30,7 +27,7 @@ mod vnet;
 mod vsocket;
 
 pub use alias_async::AliasSdk;
-pub use quinn_utils::make_insecure_quinn_client;
+pub use quinn_utils::{make_insecure_quinn_client, make_insecure_quinn_server};
 pub use vnet::VirtualNetwork;
 pub use vsocket::VirtualUdpSocket;
 
