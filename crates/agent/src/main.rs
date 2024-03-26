@@ -38,6 +38,9 @@ struct Args {
 
 #[async_std::main]
 async fn main() {
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("should install ring as default");
     let args = Args::parse();
 
     //if RUST_LOG env is not set, set it to info

@@ -10,7 +10,7 @@ use std::{
 use async_std::channel::{Receiver, Sender};
 use futures::StreamExt;
 use quinn::{
-    udp::{EcnCodepoint, RecvMeta, Transmit, UdpState},
+    udp::{EcnCodepoint, RecvMeta, Transmit},
     AsyncUdpSocket,
 };
 
@@ -51,7 +51,6 @@ impl Debug for VirtualUdpSocket {
 impl AsyncUdpSocket for VirtualUdpSocket {
     fn poll_send(
         &self,
-        _state: &UdpState,
         _cx: &mut Context,
         transmits: &[Transmit],
     ) -> Poll<Result<usize, std::io::Error>> {
