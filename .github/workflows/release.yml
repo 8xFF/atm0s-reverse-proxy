@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  AGENT_NAME: agent
-  RELAYER_NAME: relayer
+  AGENT_NAME: atm0s-reverse-proxy-agent
+  RELAYER_NAME: atm0s-reverse-proxy-relayer
   ARTIFACT_DIR: release-builds
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}

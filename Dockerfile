@@ -11,8 +11,8 @@ RUN case $TARGETPLATFORM in \
         "linux/arm64")  BUILD=aarch64-unknown-linux-gnu  ;; \
         *) exit 1 ;; \
     esac; \
-    mv /tmp/$BUILD/agent-$BUILD /agent; \
-    mv /tmp/$BUILD/relayer-$BUILD /relayer; \
+    mv /tmp/$BUILD/atm0s-reverse-proxy-agent-$BUILD /agent; \
+    mv /tmp/$BUILD/atm0s-reverse-proxy-relayer-$BUILD /relayer; \
     chmod +x /agent; \
     chmod +x /relayer;
 
