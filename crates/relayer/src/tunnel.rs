@@ -1,26 +1,32 @@
-use std::{collections::HashMap, error::Error, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    error::Error,
+    net::{SocketAddr, SocketAddrV4},
+    sync::Arc,
+    time::Duration,
+};
 
 use crate::{
-    proxy_listener::ProxyTunnel, utils::home_id_from_domain, METRICS_CLUSTER_COUNT,
-    METRICS_CLUSTER_LIVE, METRICS_PROXY_COUNT,
+    proxy_listener::{
+        cluster::{make_insecure_quinn_client, AliasSdk, VirtualUdpSocket},
+        ProxyTunnel,
+    },
+    utils::home_id_from_domain,
+    METRICS_CLUSTER_COUNT, METRICS_CLUSTER_LIVE, METRICS_PROXY_COUNT,
 };
 use async_std::{prelude::FutureExt, sync::RwLock};
-use atm0s_sdn::{
-    virtual_socket::{make_insecure_quinn_client, vnet_addr, VirtualNet},
-    NodeAliasId, NodeAliasResult, NodeAliasSdk,
-};
 use futures::{select, FutureExt as _};
 use metrics::{decrement_gauge, increment_counter, increment_gauge};
 use protocol::cluster::{ClusterTunnelRequest, ClusterTunnelResponse};
 
 pub enum TunnelContext {
     Cluster,
-    Local(NodeAliasSdk, VirtualNet),
+    Local(AliasSdk, VirtualUdpSocket),
 }
 
 pub async fn tunnel_task(
     mut proxy_tunnel: Box<dyn ProxyTunnel>,
-    agents: Arc<RwLock<HashMap<NodeAliasId, async_std::channel::Sender<Box<dyn ProxyTunnel>>>>>,
+    agents: Arc<RwLock<HashMap<u64, async_std::channel::Sender<Box<dyn ProxyTunnel>>>>>,
     context: TunnelContext,
 ) {
     match proxy_tunnel.wait().timeout(Duration::from_secs(5)).await {
@@ -51,42 +57,29 @@ pub async fn tunnel_task(
 async fn tunnel_over_cluster(
     domain: String,
     mut proxy_tunnel: Box<dyn ProxyTunnel>,
-    node_alias_sdk: NodeAliasSdk,
-    virtual_net: VirtualNet,
+    node_alias_sdk: AliasSdk,
+    socket: VirtualUdpSocket,
 ) -> Result<(), Box<dyn Error>> {
     log::warn!(
         "agent not found for domain: {} in local => finding in cluster",
         domain
     );
     let node_alias_id = home_id_from_domain(&domain);
-    let (tx, rx) = async_std::channel::bounded(1);
-    node_alias_sdk.find_alias(
-        node_alias_id,
-        Box::new(move |res| {
-            tx.try_send(res).expect("Should send result");
-        }),
-    );
-
-    let dest = match rx.recv().await? {
-        Ok(NodeAliasResult::FromLocal) => {
-            log::warn!(
-                "something wrong, found alias {} in local but mapper not found",
-                domain
-            );
-            return Err("INTERNAL_ERROR".into());
-        }
-        Ok(NodeAliasResult::FromHint(dest)) => dest,
-        Ok(NodeAliasResult::FromScan(dest)) => dest,
-        Err(_e) => return Err("NODE_ALIAS_NOT_FOUND".into()),
-    };
-
-    let socket = virtual_net
-        .create_udp_socket(0, 20)
-        .map_err(|e| format!("{:?}", e))?;
+    let dest = node_alias_sdk
+        .find_alias(node_alias_id)
+        .await
+        .ok_or("NODE_ALIAS_NOT_FOUND".to_string())?;
+    log::info!("found agent for domain: {domain} in node {dest}");
     let client = make_insecure_quinn_client(socket)?;
-    let connecting = client.connect(vnet_addr(dest, 80), "localhost")?;
+    log::info!("connecting to agent for domain: {domain} in node {dest}");
+    let connecting = client.connect(
+        SocketAddr::V4(SocketAddrV4::new(dest.into(), 443)),
+        "localhost",
+    )?;
     let connection = connecting.await?;
+    log::info!("connected to agent for domain: {domain} in node {dest}");
     let (mut send, mut recv) = connection.open_bi().await?;
+    log::info!("opened bi stream to agent for domain: {domain} in node {dest}");
 
     let req_buf: Vec<u8> = (&ClusterTunnelRequest {
         domain: domain.clone(),
