@@ -63,6 +63,9 @@ struct Args {
 
 #[async_std::main]
 async fn main() {
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("should install ring as default");
     let args = Args::parse();
     let cluster_validator = protocol_ed25519::ClusterValidatorImpl::new(args.root_domain);
 
