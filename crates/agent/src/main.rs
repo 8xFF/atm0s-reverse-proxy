@@ -1,32 +1,15 @@
-use std::alloc::System;
+use std::{alloc::System, net::SocketAddr};
+
+use atm0s_reverse_proxy_agent::{
+    run_tunnel_connection, Connection, Protocol, QuicConnection, SubConnection, TcpConnection,
+};
+use clap::Parser;
+use futures::{AsyncRead, AsyncWrite};
+use protocol_ed25519::AgentLocalKey;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[global_allocator]
 static A: System = System;
-
-use std::net::SocketAddr;
-
-use async_std::io::WriteExt;
-use clap::{Parser, ValueEnum};
-
-use connection::tcp::TcpConnection;
-use futures::{select, AsyncRead, AsyncReadExt, AsyncWrite, FutureExt};
-use local_tunnel::tcp::LocalTcpTunnel;
-use protocol::key::LocalKey;
-use tracing_subscriber::{fmt, layer::*, util::SubscriberInitExt, EnvFilter};
-
-use crate::{
-    connection::{quic::QuicConnection, Connection, SubConnection},
-    local_tunnel::LocalTunnel,
-};
-
-mod connection;
-mod local_tunnel;
-
-#[derive(ValueEnum, Debug, Clone)]
-enum Protocol {
-    Tcp,
-    Quic,
-}
 
 /// A HTTP and SNI HTTPs proxy for expose your local service to the internet.
 #[derive(Parser, Debug)]
@@ -67,8 +50,8 @@ async fn main() {
         .init();
 
     //read local_key from file first, if not exist, create a new one and save to file
-    let local_key = match std::fs::read_to_string(&args.local_key) {
-        Ok(local_key) => match LocalKey::from_pem(&local_key) {
+    let agent_signer = match std::fs::read_to_string(&args.local_key) {
+        Ok(local_key) => match AgentLocalKey::from_pem(&local_key) {
             Some(local_key) => {
                 log::info!("loadded local_key: \n{}", local_key.to_pem());
                 local_key
@@ -86,7 +69,7 @@ async fn main() {
             }
 
             log::warn!("local_key file not found => regenerate");
-            let local_key = LocalKey::random();
+            let local_key = AgentLocalKey::random();
             log::info!("created local_key: \n{}", local_key.to_pem());
             if let Err(e) = std::fs::write(&args.local_key, local_key.to_pem()) {
                 log::error!("write local_key to file error: {}", e);
@@ -103,19 +86,19 @@ async fn main() {
             args.connector_addr
         );
         match args.connector_protocol {
-            Protocol::Tcp => match TcpConnection::new(args.connector_addr, &local_key).await {
+            Protocol::Tcp => match TcpConnection::new(args.connector_addr, &agent_signer).await {
                 Ok(conn) => {
                     log::info!("Connected to connector via tcp");
-                    run_loop(conn, args.http_dest, args.https_dest).await;
+                    run_connection_loop(conn, args.http_dest, args.https_dest).await;
                 }
                 Err(e) => {
                     log::error!("Connect to connector via tcp error: {}", e);
                 }
             },
-            Protocol::Quic => match QuicConnection::new(args.connector_addr, &local_key).await {
+            Protocol::Quic => match QuicConnection::new(args.connector_addr, &agent_signer).await {
                 Ok(conn) => {
                     log::info!("Connected to connector via quic");
-                    run_loop(conn, args.http_dest, args.https_dest).await;
+                    run_connection_loop(conn, args.http_dest, args.https_dest).await;
                 }
                 Err(e) => {
                     log::error!("Connect to connector via quic error: {}", e);
@@ -127,7 +110,7 @@ async fn main() {
     }
 }
 
-async fn run_loop<S, R, W>(
+pub async fn run_connection_loop<S, R, W>(
     mut connection: impl Connection<S, R, W>,
     http_dest: SocketAddr,
     https_dest: SocketAddr,
@@ -136,12 +119,15 @@ async fn run_loop<S, R, W>(
     R: AsyncRead + Send + Unpin + 'static,
     W: AsyncWrite + Send + Unpin + 'static,
 {
-    log::info!("Connection to connector is established");
     loop {
         match connection.recv().await {
             Ok(sub_connection) => {
                 log::info!("recv sub_connection");
-                async_std::task::spawn_local(run_connection(sub_connection, http_dest, https_dest));
+                async_std::task::spawn_local(run_tunnel_connection(
+                    sub_connection,
+                    http_dest,
+                    https_dest,
+                ));
             }
             Err(e) => {
                 log::error!("recv sub_connection error: {}", e);
@@ -149,68 +135,4 @@ async fn run_loop<S, R, W>(
             }
         }
     }
-    log::warn!("Connection to connector is closed, try to reconnect...");
-}
-
-async fn run_connection<S, R, W>(sub_connection: S, http_dest: SocketAddr, https_dest: SocketAddr)
-where
-    S: SubConnection<R, W> + 'static,
-    R: AsyncRead + Send + Unpin,
-    W: AsyncWrite + Send + Unpin,
-{
-    log::info!("sub_connection pipe to local_tunnel start");
-    let (mut reader1, mut writer1) = sub_connection.split();
-    let mut first_pkt = [0u8; 4096];
-    let (local_tunnel, first_pkt_len) = match reader1.read(&mut first_pkt).await {
-        Ok(first_pkt_len) => {
-            log::info!("first pkt size: {}", first_pkt_len);
-            if first_pkt_len == 0 {
-                log::error!("first pkt size is 0 => close");
-                return;
-            }
-            if first_pkt[0] == 0x16 {
-                log::info!("create tunnel to https dest {}", https_dest);
-                (LocalTcpTunnel::new(https_dest).await, first_pkt_len)
-            } else {
-                log::info!("create tunnel to http dest {}", http_dest);
-                (LocalTcpTunnel::new(http_dest).await, first_pkt_len)
-            }
-        }
-        Err(e) => {
-            log::error!("read first pkt error: {}", e);
-            return;
-        }
-    };
-
-    let local_tunnel = match local_tunnel {
-        Ok(local_tunnel) => local_tunnel,
-        Err(e) => {
-            log::error!("create local_tunnel error: {}", e);
-            return;
-        }
-    };
-
-    let (mut reader2, mut writer2) = local_tunnel.split();
-
-    if let Err(e) = writer2.write_all(&first_pkt[..first_pkt_len]).await {
-        log::error!("write first pkt to local_tunnel error: {}", e);
-        return;
-    }
-
-    let job1 = futures::io::copy(&mut reader1, &mut writer2);
-    let job2 = futures::io::copy(&mut reader2, &mut writer1);
-
-    select! {
-        e = job1.fuse() => {
-            if let Err(e) = e {
-                log::error!("job1 error: {}", e);
-            }
-        }
-        e = job2.fuse() => {
-            if let Err(e) = e {
-                log::error!("job2 error: {}", e);
-            }
-        }
-    }
-    log::info!("sub_connection pipe to local_tunnel stop");
 }

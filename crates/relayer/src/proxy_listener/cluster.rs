@@ -39,12 +39,13 @@ enum NodeSdkEvent {
 
 pub async fn run_sdn(
     node_id: NodeId,
+    sdn_port: u16,
     secret_key: String,
     seeds: Vec<NodeAddr>,
 ) -> (ProxyClusterListener, NodeAliasSdk, VirtualNet) {
     let secure = Arc::new(atm0s_sdn::StaticKeySecure::new(&secret_key));
     let mut node_addr_builder = NodeAddrBuilder::new(node_id);
-    let udp_socket = UdpTransport::prepare(50000 + node_id as u16, &mut node_addr_builder).await;
+    let udp_socket = UdpTransport::prepare(sdn_port, &mut node_addr_builder).await;
     let transport = UdpTransport::new(node_addr_builder.addr(), udp_socket, secure.clone());
 
     let node_addr = node_addr_builder.addr();

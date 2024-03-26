@@ -1,5 +1,6 @@
 use std::{
     error::Error,
+    fmt::Debug,
     net::SocketAddr,
     pin::Pin,
     task::{Context, Poll},
@@ -10,24 +11,26 @@ use futures::{
     io::{ReadHalf, WriteHalf},
     AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Future,
 };
-use protocol::{
-    key::validate_request,
-    rpc::{RegisterRequest, RegisterResponse},
-};
+use protocol::key::ClusterValidator;
+use serde::de::DeserializeOwned;
 
 use super::{AgentConnection, AgentListener, AgentSubConnection};
 
-pub struct AgentTcpListener {
+pub struct AgentTcpListener<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Debug> {
     tcp_listener: TcpListener,
-    root_domain: String,
+    cluster_validator: VALIDATE,
+    _tmp: std::marker::PhantomData<REQ>,
 }
 
-impl AgentTcpListener {
-    pub async fn new(addr: SocketAddr, root_domain: String) -> Self {
+impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Debug>
+    AgentTcpListener<VALIDATE, REQ>
+{
+    pub async fn new(addr: SocketAddr, cluster_validator: VALIDATE) -> Self {
         log::info!("AgentTcpListener::new {}", addr);
         Self {
             tcp_listener: TcpListener::bind(addr).await.expect("Should open"),
-            root_domain,
+            cluster_validator,
+            _tmp: Default::default(),
         }
     }
 
@@ -38,33 +41,30 @@ impl AgentTcpListener {
         let mut buf = [0u8; 4096];
         let buf_len = stream.read(&mut buf).await?;
 
-        match RegisterRequest::try_from(&buf[..buf_len]) {
-            Ok(request) => {
-                let response = if let Some(sub_domain) = validate_request(&request) {
-                    log::info!("register request domain {}", sub_domain);
-                    Ok(format!("{}.{}", sub_domain, self.root_domain))
-                } else {
-                    log::error!("invalid register request {:?}", request);
-                    Err(String::from("invalid request"))
-                };
-
-                let res = RegisterResponse { response };
-                let res_buf: Vec<u8> = (&res).into();
-                if let Err(e) = stream.write_all(&res_buf).await {
-                    log::error!("register response error {:?}", e);
-                    return Err(e.into());
+        match self.cluster_validator.validate_connect_req(&buf[..buf_len]) {
+            Ok(request) => match self.cluster_validator.generate_domain(&request) {
+                Ok(domain) => {
+                    log::info!("register request domain {}", domain);
+                    let res = self.cluster_validator.sign_response_res(&request, None);
+                    stream.write_all(&res).await?;
+                    Ok(AgentTcpConnection {
+                        domain,
+                        connector: yamux::Connection::new(
+                            stream,
+                            Default::default(),
+                            yamux::Mode::Client,
+                        ),
+                    })
                 }
-
-                let domain = res.response?;
-                Ok(AgentTcpConnection {
-                    domain,
-                    connector: yamux::Connection::new(
-                        stream,
-                        Default::default(),
-                        yamux::Mode::Client,
-                    ),
-                })
-            }
+                Err(e) => {
+                    log::error!("invalid register request {:?}, err {}", request, e);
+                    let res = self
+                        .cluster_validator
+                        .sign_response_res(&request, Some(e.clone()));
+                    stream.write_all(&res).await?;
+                    Err(e.into())
+                }
+            },
             Err(e) => {
                 log::error!("register request error {:?}", e);
                 Err(e.into())
@@ -74,13 +74,16 @@ impl AgentTcpListener {
 }
 
 #[async_trait::async_trait]
-impl
+impl<
+        VALIDATE: ClusterValidator<REQ> + Send + Sync,
+        REQ: DeserializeOwned + Send + Sync + Debug,
+    >
     AgentListener<
         AgentTcpConnection,
         AgentTcpSubConnection,
         ReadHalf<yamux::Stream>,
         WriteHalf<yamux::Stream>,
-    > for AgentTcpListener
+    > for AgentTcpListener<VALIDATE, REQ>
 {
     async fn recv(&mut self) -> Result<AgentTcpConnection, Box<dyn Error>> {
         loop {
@@ -121,11 +124,14 @@ impl AgentConnection<AgentTcpSubConnection, ReadHalf<yamux::Stream>, WriteHalf<y
         })
     }
 
-    async fn recv(&mut self) -> Result<(), Box<dyn Error>> {
-        RecvStreamsClient {
-            connection: &mut self.connector,
+    async fn recv(&mut self) -> Result<AgentTcpSubConnection, Box<dyn Error>> {
+        loop {
+            //TODO handle sub connection
+            RecvStreamsClient {
+                connection: &mut self.connector,
+            }
+            .await?;
         }
-        .await
     }
 }
 
