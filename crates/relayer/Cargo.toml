@@ -22,7 +22,7 @@ metrics = { version = "0.21.1" }
 quinn = { git = "https://github.com/quinn-rs/quinn.git", branch = "rustls-0.22", features = ["runtime-async-std", "futures-io"] }
 rustls = { version = "0.23", features = ["ring", "std"] }
 rcgen = "0.12.0"
-atm0s-sdn = { git = "https://github.com/8xFF/atm0s-sdn.git", rev = "7ee6dd7e50ae82f2c4e0d580aa6e6108b875f297" }
+atm0s-sdn = { git = "https://github.com/8xFF/atm0s-sdn.git", rev = "e2c593686768299eb991665d63485f20304f7e30" }
 
 [features]
 default = ["binary"]

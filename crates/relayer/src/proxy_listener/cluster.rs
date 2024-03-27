@@ -117,7 +117,6 @@ pub async fn run_sdn(
                 );
             }
             while let Some(event) = controller.pop_event() {
-                // log::info!("Event: {:?}", event);
                 match event {
                     SdnExtOut::FeaturesEvent(FeaturesEvent::Socket(socket::Event::RecvFrom(
                         local_port,
@@ -140,8 +139,11 @@ pub async fn run_sdn(
                         alias,
                         res,
                     ))) => {
+                        log::info!("FeaturesEvent::Alias: {alias} {:?}", res);
                         let res = res.map(|a| match a {
                             FoundLocation::Local => node_id,
+                            FoundLocation::Notify(node) => node,
+                            FoundLocation::CachedHint(node) => node,
                             FoundLocation::RemoteHint(node) => node,
                             FoundLocation::RemoteScan(node) => node,
                         });
