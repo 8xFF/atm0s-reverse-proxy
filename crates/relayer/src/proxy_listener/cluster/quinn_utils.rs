@@ -1,12 +1,15 @@
-use quinn::{AsyncStdRuntime, ClientConfig, Endpoint, EndpointConfig, ServerConfig};
+use quinn::{
+    AsyncStdRuntime, ClientConfig, Endpoint, EndpointConfig, ServerConfig, TransportConfig,
+};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer, ServerName, UnixTime};
 use std::error::Error;
 use std::sync::Arc;
+use std::time::Duration;
 
 use super::vsocket::VirtualUdpSocket;
 
 pub fn make_insecure_quinn_server(socket: VirtualUdpSocket) -> Result<Endpoint, Box<dyn Error>> {
-    let (server_config, server_cert) = configure_server()?;
+    let (server_config, _server_cert) = configure_server()?;
     let runtime = Arc::new(AsyncStdRuntime);
     let mut config = EndpointConfig::default();
     config
@@ -107,5 +110,9 @@ fn configure_client() -> ClientConfig {
         .with_custom_certificate_verifier(SkipServerVerification::new(provider.clone()))
         .with_no_client_auth();
 
-    ClientConfig::new(Arc::new(crypto))
+    let mut config = ClientConfig::new(Arc::new(crypto));
+    let mut transport = TransportConfig::default();
+    transport.keep_alive_interval(Some(Duration::from_secs(3)));
+    config.transport_config(Arc::new(transport));
+    config
 }
