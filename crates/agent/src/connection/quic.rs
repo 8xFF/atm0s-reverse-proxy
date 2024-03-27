@@ -1,9 +1,9 @@
 use protocol::key::AgentSigner;
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use serde::de::DeserializeOwned;
-use std::{error::Error, net::SocketAddr, sync::Arc};
+use std::{error::Error, net::SocketAddr, sync::Arc, time::Duration};
 
-use quinn::{ClientConfig, Endpoint, RecvStream, SendStream};
+use quinn::{ClientConfig, Endpoint, RecvStream, SendStream, TransportConfig};
 
 use super::{Connection, SubConnection};
 
@@ -138,5 +138,9 @@ fn configure_client() -> ClientConfig {
         .with_custom_certificate_verifier(SkipServerVerification::new(provider.clone()))
         .with_no_client_auth();
 
-    ClientConfig::new(Arc::new(crypto))
+    let mut config = ClientConfig::new(Arc::new(crypto));
+    let mut transport = TransportConfig::default();
+    transport.keep_alive_interval(Some(Duration::from_secs(3)));
+    config.transport_config(Arc::new(transport));
+    config
 }
