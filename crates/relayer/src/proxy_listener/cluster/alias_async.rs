@@ -22,6 +22,7 @@ impl AliasSdk {
             .send(AliasSdkEvent::Query(alias, tx))
             .await
             .ok()?;
+        log::info!("Sent request for query alias: {}", alias);
         rx.recv().await.ok().flatten()
     }
 
@@ -38,6 +39,7 @@ impl AliasSdk {
     }
 }
 
+#[derive(Debug)]
 pub enum AliasAsyncEvent {
     Register(u64),
     Unregister(u64),
