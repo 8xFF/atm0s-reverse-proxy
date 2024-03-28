@@ -1,15 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
 use atm0s_sdn::{
-    builder::SdnBuilder,
-    features::{
+    builder::SdnBuilder, features::{
         alias::{self, FoundLocation},
         socket, FeaturesControl, FeaturesEvent,
-    },
-    sans_io_runtime::{backend::PollingBackend, Owner},
-    services::visualization,
-    tasks::{SdnExtIn, SdnExtOut},
-    NodeAddr, NodeId, ServiceBroadcastLevel,
+    }, sans_io_runtime::{backend::PollingBackend, Owner}, secure::StaticKeyAuthorization, services::visualization, tasks::{SdnExtIn, SdnExtOut}, NodeAddr, NodeId, ServiceBroadcastLevel
 };
 use futures::{AsyncRead, AsyncWrite};
 use protocol::cluster::{ClusterTunnelRequest, ClusterTunnelResponse};
@@ -53,6 +48,7 @@ pub async fn run_sdn(
     builder.set_manual_discovery(vec!["tunnel".to_string()], vec!["tunnel".to_string()]);
     builder.set_visualization_collector(false);
     builder.add_service(Arc::new(service::RelayServiceBuilder::default()));
+    builder.set_authorization(StaticKeyAuthorization::new(&secret_key));
 
     for seed in seeds {
         builder.add_seed(seed);
