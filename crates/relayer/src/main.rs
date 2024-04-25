@@ -141,8 +141,11 @@ async fn main() {
             },
             e = proxy_http_listener.recv().fuse() => match e {
                 Some(proxy_tunnel) => {
-                    let socket = virtual_net.udp_socket(0).await;
-                    async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket)));
+                    if let Some(socket) = virtual_net.udp_socket(0).await {
+                        async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket)));
+                    } else {
+                        log::error!("Virtual Net create socket error");
+                    }
                 }
                 None => {
                     log::error!("proxy_http_listener.recv()");
@@ -151,8 +154,11 @@ async fn main() {
             },
             e = proxy_tls_listener.recv().fuse() => match e {
                 Some(proxy_tunnel) => {
-                    let socket = virtual_net.udp_socket(0).await;
-                    async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket)));
+                    if let Some(socket) = virtual_net.udp_socket(0).await {
+                        async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket)));
+                    } else {
+                        log::error!("Virtual Net create socket error");
+                    }
                 }
                 None => {
                     log::error!("proxy_http_listener.recv()");
