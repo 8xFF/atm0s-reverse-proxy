@@ -1,10 +1,16 @@
 use std::{sync::Arc, time::Duration};
 
 use atm0s_sdn::{
-    builder::SdnBuilder, features::{
+    builder::SdnBuilder,
+    features::{
         alias::{self, FoundLocation},
         socket, FeaturesControl, FeaturesEvent,
-    }, sans_io_runtime::{backend::PollingBackend, Owner}, secure::StaticKeyAuthorization, services::visualization, tasks::{SdnExtIn, SdnExtOut}, NodeAddr, NodeId, ServiceBroadcastLevel
+    },
+    sans_io_runtime::{backend::PollingBackend, Owner},
+    secure::StaticKeyAuthorization,
+    services::visualization,
+    tasks::{SdnExtIn, SdnExtOut},
+    NodeAddr, NodeId, ServiceBroadcastLevel,
 };
 use futures::{AsyncRead, AsyncWrite};
 use protocol::cluster::{ClusterTunnelRequest, ClusterTunnelResponse};
@@ -41,7 +47,10 @@ pub async fn run_sdn(
     let (mut vnet, tx, rx) = vnet::VirtualNetwork::new(node_id);
     let (mut alias_async, alias_sdk) = alias_async::AliasAsync::new();
 
-    let server_socket = vnet.udp_socket(443).await;
+    let server_socket = vnet
+        .udp_socket(443)
+        .await
+        .expect("Should have 443 virtual port");
 
     let mut builder = SdnBuilder::<SC, SE, TC, TW>::new(node_id, sdn_port, vec![]);
 

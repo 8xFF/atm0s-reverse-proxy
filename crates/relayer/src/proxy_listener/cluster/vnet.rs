@@ -53,7 +53,7 @@ impl VirtualNetwork {
         )
     }
 
-    pub async fn udp_socket(&mut self, port: u16) -> VirtualUdpSocket {
+    pub async fn udp_socket(&mut self, port: u16) -> Option<VirtualUdpSocket> {
         //remove port from ports
         let port = if port > 0 {
             let index = self
@@ -64,7 +64,7 @@ impl VirtualNetwork {
             self.ports.swap_remove_back(index);
             port
         } else {
-            self.ports.pop_front().expect("Should have port")
+            self.ports.pop_front()?
         };
         self.out_tx
             .send(OutEvent::Bind(port))
@@ -72,13 +72,13 @@ impl VirtualNetwork {
             .expect("Should send bind");
         let (tx, rx) = async_std::channel::bounded(1000);
         self.sockets.insert(port, tx);
-        VirtualUdpSocket::new(
+        Some(VirtualUdpSocket::new(
             self.node_id,
             port,
             self.out_tx.clone(),
             rx,
             self.close_socket_tx.clone(),
-        )
+        ))
     }
 
     pub async fn recv(&mut self) -> Option<()> {
@@ -86,6 +86,7 @@ impl VirtualNetwork {
             port = self.close_socket_rx.recv().fuse() => {
                 let port = port.expect("Should have port");
                 self.ports.push_back(port);
+                self.sockets.remove(&port);
                 self.out_tx.send(OutEvent::Unbind(port)).await.expect("Should send unbind");
                 Some(())
             }
