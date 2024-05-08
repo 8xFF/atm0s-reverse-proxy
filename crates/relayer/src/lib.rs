@@ -10,12 +10,12 @@ use metrics::{decrement_gauge, increment_counter, increment_gauge};
 
 use crate::utils::home_id_from_domain;
 
-pub const METRICS_AGENT_COUNT: &str = "agent.count";
-pub const METRICS_AGENT_LIVE: &str = "agent.live";
-pub const METRICS_PROXY_COUNT: &str = "proxy.count";
-pub const METRICS_CLUSTER_LIVE: &str = "cluster.live";
-pub const METRICS_CLUSTER_COUNT: &str = "cluster.count";
-pub const METRICS_PROXY_LIVE: &str = "proxy.live";
+pub const METRICS_AGENT_COUNT: &str = "atm0s_proxy_agent_count";
+pub const METRICS_AGENT_LIVE: &str = "atm0s_proxy_agent_live";
+pub const METRICS_PROXY_COUNT: &str = "atm0s_proxy_proxy_count";
+pub const METRICS_CLUSTER_LIVE: &str = "atm0s_proxy_cluster_live";
+pub const METRICS_CLUSTER_COUNT: &str = "atm0s_proxy_cluster_count";
+pub const METRICS_PROXY_LIVE: &str = "atm0s_proxy_proxy_live";
 
 mod agent_listener;
 mod agent_worker;
