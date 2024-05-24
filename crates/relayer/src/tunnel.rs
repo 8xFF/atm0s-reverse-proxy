@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     proxy_listener::{
-        cluster::{make_insecure_quinn_client, AliasSdk, VirtualUdpSocket},
+        cluster::{make_quinn_client, AliasSdk, VirtualUdpSocket},
         ProxyTunnel,
     },
     utils::home_id_from_domain,
@@ -18,16 +18,17 @@ use async_std::{prelude::FutureExt, sync::RwLock};
 use futures::{select, FutureExt as _};
 use metrics::{decrement_gauge, increment_counter, increment_gauge};
 use protocol::cluster::{ClusterTunnelRequest, ClusterTunnelResponse};
+use rustls::pki_types::CertificateDer;
 
-pub enum TunnelContext {
+pub enum TunnelContext<'a> {
     Cluster,
-    Local(AliasSdk, VirtualUdpSocket),
+    Local(AliasSdk, VirtualUdpSocket, Vec<CertificateDer<'a>>),
 }
 
-pub async fn tunnel_task(
+pub async fn tunnel_task<'a>(
     mut proxy_tunnel: Box<dyn ProxyTunnel>,
     agents: Arc<RwLock<HashMap<u64, async_std::channel::Sender<Box<dyn ProxyTunnel>>>>>,
-    context: TunnelContext,
+    context: TunnelContext<'a>,
 ) {
     match proxy_tunnel.wait().timeout(Duration::from_secs(5)).await {
         Err(_) => {
@@ -46,19 +47,27 @@ pub async fn tunnel_task(
     let home_id = home_id_from_domain(&domain);
     if let Some(agent_tx) = agents.read().await.get(&home_id) {
         agent_tx.send(proxy_tunnel).await.ok();
-    } else if let TunnelContext::Local(node_alias_sdk, virtual_net) = context {
-        if let Err(e) = tunnel_over_cluster(domain, proxy_tunnel, node_alias_sdk, virtual_net).await
+    } else if let TunnelContext::Local(node_alias_sdk, virtual_net, server_certs) = context {
+        if let Err(e) = tunnel_over_cluster(
+            domain,
+            proxy_tunnel,
+            node_alias_sdk,
+            virtual_net,
+            &server_certs,
+        )
+        .await
         {
             log::error!("tunnel_over_cluster error: {}", e);
         }
     }
 }
 
-async fn tunnel_over_cluster(
+async fn tunnel_over_cluster<'a>(
     domain: String,
     mut proxy_tunnel: Box<dyn ProxyTunnel>,
     node_alias_sdk: AliasSdk,
     socket: VirtualUdpSocket,
+    server_certs: &'a [CertificateDer<'a>],
 ) -> Result<(), Box<dyn Error>> {
     log::warn!(
         "agent not found for domain: {} in local => finding in cluster",
@@ -70,11 +79,11 @@ async fn tunnel_over_cluster(
         .await
         .ok_or("NODE_ALIAS_NOT_FOUND".to_string())?;
     log::info!("found agent for domain: {domain} in node {dest}");
-    let client = make_insecure_quinn_client(socket)?;
+    let client = make_quinn_client(socket, server_certs)?;
     log::info!("connecting to agent for domain: {domain} in node {dest}");
     let connecting = client.connect(
         SocketAddr::V4(SocketAddrV4::new(dest.into(), 443)),
-        "localhost",
+        "cluster",
     )?;
     let connection = connecting.await?;
     log::info!("connected to agent for domain: {domain} in node {dest}");

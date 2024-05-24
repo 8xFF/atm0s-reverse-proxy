@@ -17,8 +17,10 @@ bincode = "1.3.3"
 serde = { version = "1.0.193", features = ["derive"] }
 protocol = { path = "../protocol", package = "atm0s-reverse-proxy-protocol" }
 protocol-ed25519 = { path = "../protocol_ed25519", package = "atm0s-reverse-proxy-protocol-ed25519", optional = true }
-quinn = { git = "https://github.com/giangndm/quinn.git", branch = "temp-for-new-ring", features = ["runtime-async-std", "futures-io"] }
+quinn = { version = "0.11", features = ["ring", "runtime-async-std", "futures-io"] }
 rustls = { version = "0.23", features = ["ring", "std"] }
+url = "2.5.0"
+base64 = "0.22.1"
 
 [profile.release]
 strip = true  # Automatically strip symbols from the binary.

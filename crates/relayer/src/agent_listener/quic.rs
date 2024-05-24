@@ -16,10 +16,15 @@ pub struct AgentQuicListener<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOw
 impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Debug>
     AgentQuicListener<VALIDATE, REQ>
 {
-    pub async fn new(addr: SocketAddr, cluster_validator: VALIDATE) -> Self {
+    pub async fn new(
+        addr: SocketAddr,
+        cluster_validator: VALIDATE,
+        priv_key: PrivatePkcs8KeyDer<'static>,
+        cert: CertificateDer<'static>,
+    ) -> Self {
         log::info!("AgentQuicListener::new {}", addr);
-        let (endpoint, _server_cert) =
-            make_server_endpoint(addr).expect("Should make server endpoint");
+        let endpoint =
+            make_server_endpoint(addr, priv_key, cert).expect("Should make server endpoint");
 
         Self {
             endpoint,
@@ -78,7 +83,17 @@ impl<
                 .accept()
                 .await
                 .ok_or::<Box<dyn Error>>("Cannot accept".into())?;
-            let conn: quinn::Connection = incoming_conn.await?;
+            log::info!(
+                "[AgentQuicListener] On incoming from {}",
+                incoming_conn.remote_address()
+            );
+            let conn: quinn::Connection = match incoming_conn.await {
+                Ok(conn) => conn,
+                Err(e) => {
+                    log::error!("[AgentQuicListener] incomming conn error {}", e);
+                    continue;
+                }
+            };
             log::info!(
                 "[AgentQuicListener] new conn from {}",
                 conn.remote_address()
@@ -129,23 +144,26 @@ impl AgentSubConnection<RecvStream, SendStream> for AgentQuicSubConnection {
     }
 }
 
-fn make_server_endpoint(bind_addr: SocketAddr) -> Result<(Endpoint, Vec<u8>), Box<dyn Error>> {
-    let (server_config, server_cert) = configure_server()?;
+fn make_server_endpoint(
+    bind_addr: SocketAddr,
+    priv_key: PrivatePkcs8KeyDer<'static>,
+    cert: CertificateDer<'static>,
+) -> Result<Endpoint, Box<dyn Error>> {
+    let server_config = configure_server(priv_key, cert)?;
     let endpoint = Endpoint::server(server_config, bind_addr)?;
-    Ok((endpoint, server_cert))
+    Ok(endpoint)
 }
 
 /// Returns default server configuration along with its certificate.
-fn configure_server() -> Result<(ServerConfig, Vec<u8>), Box<dyn Error>> {
-    let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
-    let cert_der = cert.serialize_der().unwrap();
-    let priv_key = cert.serialize_private_key_der();
-    let priv_key = PrivatePkcs8KeyDer::from(priv_key);
-    let cert_chain = vec![CertificateDer::from(cert_der.clone())];
+fn configure_server(
+    priv_key: PrivatePkcs8KeyDer<'static>,
+    cert: CertificateDer<'static>,
+) -> Result<ServerConfig, Box<dyn Error>> {
+    let cert_chain = vec![cert];
 
     let mut server_config = ServerConfig::with_single_cert(cert_chain, priv_key.into())?;
     let transport_config = Arc::get_mut(&mut server_config.transport).unwrap();
     transport_config.max_concurrent_uni_streams(0_u8.into());
 
-    Ok((server_config, cert_der))
+    Ok(server_config)
 }

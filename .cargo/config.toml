@@ -1,5 +1,6 @@
 [net]
 git-fetch-with-cli = true
 
-[patch.crates-io]
-rustls = { git = "https://github.com/giangndm/rustls.git", branch = "mipsel-patch" }
+# We dont build for mipsel then we dont need this
+# [patch.crates-io]
+# rustls = { git = "https://github.com/giangndm/rustls.git", branch = "mipsel-patch" }

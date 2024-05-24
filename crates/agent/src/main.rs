@@ -3,10 +3,13 @@ use std::{alloc::System, net::SocketAddr};
 use atm0s_reverse_proxy_agent::{
     run_tunnel_connection, Connection, Protocol, QuicConnection, SubConnection, TcpConnection,
 };
+use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 use clap::Parser;
 use futures::{AsyncRead, AsyncWrite};
 use protocol_ed25519::AgentLocalKey;
+use rustls::pki_types::CertificateDer;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use url::Url;
 
 #[global_allocator]
 static A: System = System;
@@ -17,7 +20,7 @@ static A: System = System;
 struct Args {
     /// Address of relay server
     #[arg(env, long)]
-    connector_addr: SocketAddr,
+    connector_addr: Url,
 
     /// Protocol of relay server
     #[arg(env, long)]
@@ -34,14 +37,36 @@ struct Args {
     /// Persistent local key
     #[arg(env, long, default_value = "local_key.pem")]
     local_key: String,
+
+    /// Custom quic server cert in base64
+    #[arg(env, long)]
+    custom_quic_cert_base64: Option<String>,
+
+    /// Allow connect in insecure mode
+    #[arg(env, long)]
+    allow_quic_insecure: bool,
 }
 
 #[async_std::main]
 async fn main() {
+    let args = Args::parse();
+    let default_tunnel_cert_buf = include_bytes!("../../../certs/tunnel.cert");
+    let default_tunnel_cert = CertificateDer::from(default_tunnel_cert_buf.to_vec());
+
+    let server_certs = if let Some(cert) = args.custom_quic_cert_base64 {
+        vec![CertificateDer::from(
+            URL_SAFE
+                .decode(&cert)
+                .expect("Custom cert should in base64 format")
+                .to_vec(),
+        )]
+    } else {
+        vec![default_tunnel_cert]
+    };
+
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("should install ring as default");
-    let args = Args::parse();
 
     //if RUST_LOG env is not set, set it to info
     if std::env::var("RUST_LOG").is_err() {
@@ -84,29 +109,40 @@ async fn main() {
 
     loop {
         log::info!(
-            "Connecting to connector... {:?} addr: {:?}",
+            "Connecting to connector... {:?} addr: {}",
             args.connector_protocol,
             args.connector_addr
         );
         match args.connector_protocol {
-            Protocol::Tcp => match TcpConnection::new(args.connector_addr, &agent_signer).await {
-                Ok(conn) => {
-                    log::info!("Connected to connector via tcp");
-                    run_connection_loop(conn, args.http_dest, args.https_dest).await;
+            Protocol::Tcp => {
+                match TcpConnection::new(args.connector_addr.clone(), &agent_signer).await {
+                    Ok(conn) => {
+                        log::info!("Connected to connector via tcp");
+                        run_connection_loop(conn, args.http_dest, args.https_dest).await;
+                    }
+                    Err(e) => {
+                        log::error!("Connect to connector via tcp error: {}", e);
+                    }
                 }
-                Err(e) => {
-                    log::error!("Connect to connector via tcp error: {}", e);
+            }
+            Protocol::Quic => {
+                match QuicConnection::new(
+                    args.connector_addr.clone(),
+                    &agent_signer,
+                    &server_certs,
+                    args.allow_quic_insecure,
+                )
+                .await
+                {
+                    Ok(conn) => {
+                        log::info!("Connected to connector via quic");
+                        run_connection_loop(conn, args.http_dest, args.https_dest).await;
+                    }
+                    Err(e) => {
+                        log::error!("Connect to connector via quic error: {}", e);
+                    }
                 }
-            },
-            Protocol::Quic => match QuicConnection::new(args.connector_addr, &agent_signer).await {
-                Ok(conn) => {
-                    log::info!("Connected to connector via quic");
-                    run_connection_loop(conn, args.http_dest, args.https_dest).await;
-                }
-                Err(e) => {
-                    log::error!("Connect to connector via quic error: {}", e);
-                }
-            },
+            }
         }
         //TODO exponential backoff
         async_std::task::sleep(std::time::Duration::from_secs(1)).await;
