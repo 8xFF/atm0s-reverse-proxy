@@ -31,8 +31,7 @@ pub use agent_listener::{
 };
 pub use atm0s_sdn;
 pub use proxy_listener::cluster::{
-    make_insecure_quinn_client, make_insecure_quinn_server, AliasSdk, VirtualNetwork,
-    VirtualUdpSocket,
+    make_quinn_client, make_quinn_server, AliasSdk, VirtualNetwork, VirtualUdpSocket,
 };
 pub use quinn;
 

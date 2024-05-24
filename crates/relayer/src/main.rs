@@ -9,6 +9,7 @@ use clap::Parser;
 use metrics_dashboard::build_dashboard_route;
 #[cfg(feature = "expose-metrics")]
 use poem::{listener::TcpListener, middleware::Tracing, EndpointExt as _, Route, Server};
+use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use std::{collections::HashMap, net::SocketAddr, process::exit, sync::Arc};
 
 use async_std::sync::RwLock;
@@ -63,6 +64,16 @@ struct Args {
 
 #[async_std::main]
 async fn main() {
+    let default_tunnel_cert_buf = include_bytes!("../../../certs/tunnel.cert");
+    let default_tunnel_key_buf = include_bytes!("../../../certs/tunnel.key");
+    let default_tunnel_cert = CertificateDer::from(default_tunnel_cert_buf.to_vec());
+    let default_tunnel_key = PrivatePkcs8KeyDer::from(default_tunnel_key_buf.to_vec());
+
+    let default_cluster_cert_buf = include_bytes!("../../../certs/cluster.cert");
+    let default_cluster_key_buf = include_bytes!("../../../certs/cluster.key");
+    let default_cluster_cert = CertificateDer::from(default_cluster_cert_buf.to_vec());
+    let default_cluster_key = PrivatePkcs8KeyDer::from(default_cluster_key_buf.to_vec());
+
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("should install ring as default");
@@ -77,8 +88,13 @@ async fn main() {
         .with(fmt::layer())
         .with(EnvFilter::from_default_env())
         .init();
-    let mut quic_agent_listener =
-        AgentQuicListener::new(args.connector_port, cluster_validator.clone()).await;
+    let mut quic_agent_listener = AgentQuicListener::new(
+        args.connector_port,
+        cluster_validator.clone(),
+        default_tunnel_key,
+        default_tunnel_cert,
+    )
+    .await;
     let mut tcp_agent_listener =
         AgentTcpListener::new(args.connector_port, cluster_validator).await;
     let mut proxy_http_listener = ProxyHttpListener::new(args.http_port, false)
@@ -113,6 +129,8 @@ async fn main() {
         args.sdn_secret_key,
         args.sdn_seeds,
         args.sdn_workers,
+        default_cluster_key,
+        default_cluster_cert.clone(),
     )
     .await;
 
@@ -142,7 +160,7 @@ async fn main() {
             e = proxy_http_listener.recv().fuse() => match e {
                 Some(proxy_tunnel) => {
                     if let Some(socket) = virtual_net.udp_socket(0).await {
-                        async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket)));
+                        async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket, vec![default_cluster_cert.clone()])));
                     } else {
                         log::error!("Virtual Net create socket error");
                     }
@@ -155,7 +173,7 @@ async fn main() {
             e = proxy_tls_listener.recv().fuse() => match e {
                 Some(proxy_tunnel) => {
                     if let Some(socket) = virtual_net.udp_socket(0).await {
-                        async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket)));
+                        async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket, vec![default_cluster_cert.clone()])));
                     } else {
                         log::error!("Virtual Net create socket error");
                     }

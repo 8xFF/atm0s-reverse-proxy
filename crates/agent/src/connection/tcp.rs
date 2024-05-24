@@ -1,6 +1,6 @@
 use std::{
     error::Error,
-    net::SocketAddr,
+    net::{SocketAddr, ToSocketAddrs},
     pin::Pin,
     task::{Context, Poll},
 };
@@ -10,6 +10,7 @@ use futures::io::{ReadHalf, WriteHalf};
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Future};
 use protocol::key::AgentSigner;
 use serde::de::DeserializeOwned;
+use url::Url;
 use yamux::Mode;
 
 use super::{Connection, SubConnection};
@@ -37,10 +38,20 @@ pub struct TcpConnection<RES> {
 
 impl<RES: DeserializeOwned> TcpConnection<RES> {
     pub async fn new<AS: AgentSigner<RES>>(
-        dest: SocketAddr,
+        url: Url,
         agent_signer: &AS,
     ) -> Result<Self, Box<dyn Error>> {
-        let mut stream = TcpStream::connect(dest).await?;
+        let url_host = url
+            .host_str()
+            .ok_or::<Box<dyn Error>>("couldn't get host from url".into())?;
+        let url_port = url.port().unwrap_or(33333);
+        log::info!("connecting to server {}:{}", url_host, url_port);
+        let remote = (url_host, url_port)
+            .to_socket_addrs()?
+            .next()
+            .ok_or::<Box<dyn Error>>("couldn't resolve to an address".into())?;
+
+        let mut stream = TcpStream::connect(remote).await?;
         stream.write_all(&agent_signer.sign_connect_req()).await?;
 
         let mut buf = [0u8; 4096];

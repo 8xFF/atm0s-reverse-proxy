@@ -14,9 +14,10 @@ use atm0s_sdn::{
 };
 use futures::{AsyncRead, AsyncWrite};
 use protocol::cluster::{ClusterTunnelRequest, ClusterTunnelResponse};
-use quinn::{Connecting, Endpoint};
+use quinn::{Endpoint, Incoming};
 
 use alias_async::AliasAsyncEvent;
+use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use vnet::{NetworkPkt, OutEvent};
 
 use super::{ProxyListener, ProxyTunnel};
@@ -28,7 +29,7 @@ mod vnet;
 mod vsocket;
 
 pub use alias_async::AliasSdk;
-pub use quinn_utils::{make_insecure_quinn_client, make_insecure_quinn_server};
+pub use quinn_utils::{make_quinn_client, make_quinn_server};
 pub use vnet::VirtualNetwork;
 pub use vsocket::VirtualUdpSocket;
 
@@ -43,6 +44,8 @@ pub async fn run_sdn(
     secret_key: String,
     seeds: Vec<NodeAddr>,
     workers: usize,
+    priv_key: PrivatePkcs8KeyDer<'static>,
+    cert: CertificateDer<'static>,
 ) -> (ProxyClusterListener, AliasSdk, VirtualNetwork) {
     let (mut vnet, tx, rx) = vnet::VirtualNetwork::new(node_id);
     let (mut alias_async, alias_sdk) = alias_async::AliasAsync::new();
@@ -161,7 +164,11 @@ pub async fn run_sdn(
         }
     });
 
-    (ProxyClusterListener::new(server_socket), alias_sdk, vnet)
+    (
+        ProxyClusterListener::new(server_socket, priv_key, cert),
+        alias_sdk,
+        vnet,
+    )
 }
 
 pub struct ProxyClusterListener {
@@ -169,8 +176,12 @@ pub struct ProxyClusterListener {
 }
 
 impl ProxyClusterListener {
-    pub fn new(socket: VirtualUdpSocket) -> Self {
-        let server = make_insecure_quinn_server(socket).expect("");
+    pub fn new(
+        socket: VirtualUdpSocket,
+        priv_key: PrivatePkcs8KeyDer<'static>,
+        cert: CertificateDer<'static>,
+    ) -> Self {
+        let server = make_quinn_server(socket, priv_key, cert).expect("");
         Self { server }
     }
 }
@@ -190,7 +201,7 @@ impl ProxyListener for ProxyClusterListener {
 
 pub struct ProxyClusterTunnel {
     domain: String,
-    connecting: Option<Connecting>,
+    connecting: Option<Incoming>,
     streams: Option<(
         Box<dyn AsyncRead + Send + Sync + Unpin>,
         Box<dyn AsyncWrite + Send + Sync + Unpin>,

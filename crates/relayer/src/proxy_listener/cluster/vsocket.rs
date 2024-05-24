@@ -3,7 +3,8 @@ use std::{
     io::IoSliceMut,
     net::{SocketAddr, SocketAddrV4},
     ops::DerefMut,
-    sync::Mutex,
+    pin::Pin,
+    sync::{Arc, Mutex},
     task::{Context, Poll},
 };
 
@@ -11,10 +12,20 @@ use async_std::channel::{Receiver, Sender};
 use futures::StreamExt;
 use quinn::{
     udp::{EcnCodepoint, RecvMeta, Transmit},
-    AsyncUdpSocket,
+    AsyncUdpSocket, UdpPoller,
 };
 
 use super::vnet::{NetworkPkt, OutEvent};
+
+#[derive(Debug)]
+pub struct Poller {}
+
+impl UdpPoller for Poller {
+    fn poll_writable(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<std::io::Result<()>> {
+        //TODO implement this for better performace
+        Poll::Ready(Ok(()))
+    }
+}
 
 pub struct VirtualUdpSocket {
     port: u16,
@@ -49,33 +60,31 @@ impl Debug for VirtualUdpSocket {
 }
 
 impl AsyncUdpSocket for VirtualUdpSocket {
-    fn poll_send(
-        &self,
-        _cx: &mut Context,
-        transmits: &[Transmit],
-    ) -> Poll<Result<usize, std::io::Error>> {
-        let mut sent = 0;
-        for transmit in transmits {
-            match transmit.destination {
-                SocketAddr::V4(addr) => {
-                    let pkt = NetworkPkt {
-                        local_port: self.port,
-                        remote: u32::from_be_bytes(addr.ip().octets()),
-                        remote_port: addr.port(),
-                        data: transmit.contents.to_vec(),
-                        meta: transmit.ecn.map(|x| x as u8).unwrap_or(0),
-                    };
-                    log::debug!("{} sending {} bytes to {}", self.addr, pkt.data.len(), addr);
-                    if self.tx.try_send(OutEvent::Pkt(pkt)).is_ok() {
-                        sent += 1;
-                    }
-                }
-                _ => {
-                    sent += 1;
+    fn create_io_poller(self: Arc<Self>) -> Pin<Box<dyn UdpPoller>> {
+        Box::into_pin(Box::new(Poller {}))
+    }
+
+    fn try_send(&self, transmit: &Transmit) -> std::io::Result<()> {
+        match transmit.destination {
+            SocketAddr::V4(addr) => {
+                let pkt = NetworkPkt {
+                    local_port: self.port,
+                    remote: u32::from_be_bytes(addr.ip().octets()),
+                    remote_port: addr.port(),
+                    data: transmit.contents.to_vec(),
+                    meta: transmit.ecn.map(|x| x as u8).unwrap_or(0),
+                };
+                log::debug!("{} sending {} bytes to {}", self.addr, pkt.data.len(), addr);
+                if !self.tx.is_full() && self.tx.try_send(OutEvent::Pkt(pkt)).is_ok() {
+                    Ok(())
+                } else {
+                    //Err(std::io::ErrorKind::WouldBlock.into())
+                    //TODO avoid fake send success, need to implement awake mechanism
+                    Ok(())
                 }
             }
+            _ => Err(std::io::ErrorKind::ConnectionRefused.into()),
         }
-        std::task::Poll::Ready(Ok(sent))
     }
 
     fn poll_recv(
