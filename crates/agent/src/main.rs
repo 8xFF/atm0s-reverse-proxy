@@ -117,7 +117,10 @@ async fn main() {
             Protocol::Tcp => {
                 match TcpConnection::new(args.connector_addr.clone(), &agent_signer).await {
                     Ok(conn) => {
-                        log::info!("Connected to connector via tcp");
+                        log::info!(
+                            "Connected to connector via tcp with res {:?}",
+                            conn.response()
+                        );
                         run_connection_loop(conn, args.http_dest, args.https_dest).await;
                     }
                     Err(e) => {
@@ -135,7 +138,10 @@ async fn main() {
                 .await
                 {
                     Ok(conn) => {
-                        log::info!("Connected to connector via quic");
+                        log::info!(
+                            "Connected to connector via quic with res {:?}",
+                            conn.response()
+                        );
                         run_connection_loop(conn, args.http_dest, args.https_dest).await;
                     }
                     Err(e) => {
