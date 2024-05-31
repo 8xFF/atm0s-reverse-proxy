@@ -6,7 +6,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use async_std::sync::RwLock;
 use futures::{AsyncRead, AsyncWrite};
-use metrics::{decrement_gauge, increment_counter, increment_gauge};
+use metrics::{counter, gauge};
 
 use crate::utils::home_id_from_domain;
 
@@ -52,7 +52,7 @@ pub async fn run_agent_connection<AG, S, R, W>(
     R: AsyncRead + Send + Unpin + 'static,
     W: AsyncWrite + Send + Unpin + 'static,
 {
-    increment_counter!(METRICS_AGENT_COUNT);
+    counter!(METRICS_AGENT_COUNT).increment(1);
     log::info!("agent_connection.domain(): {}", agent_connection.domain());
     let domain = agent_connection.domain().to_string();
     let (mut agent_worker, proxy_tunnel_tx) =
@@ -65,7 +65,7 @@ pub async fn run_agent_connection<AG, S, R, W>(
     node_alias_sdk.register_alias(home_id.clone()).await;
     let agents = agents.clone();
     async_std::task::spawn(async move {
-        increment_gauge!(METRICS_AGENT_LIVE, 1.0);
+        gauge!(METRICS_AGENT_LIVE).increment(1.0);
         log::info!("agent_worker run for domain: {}", domain);
         loop {
             match agent_worker.run().await {
@@ -81,6 +81,6 @@ pub async fn run_agent_connection<AG, S, R, W>(
             .unregister_alias(home_id_from_domain(&domain))
             .await;
         log::info!("agent_worker exit for domain: {}", domain);
-        decrement_gauge!(METRICS_AGENT_LIVE, 1.0);
+        gauge!(METRICS_AGENT_LIVE).decrement(1.0);
     });
 }

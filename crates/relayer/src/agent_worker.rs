@@ -1,7 +1,7 @@
 use std::{error::Error, marker::PhantomData, sync::Arc};
 
 use futures::{select, AsyncRead, AsyncWrite, FutureExt};
-use metrics::increment_gauge;
+use metrics::gauge;
 
 enum IncommingConn<
     S: AgentSubConnection<R, W>,
@@ -59,7 +59,7 @@ where
     ) -> Result<(), Box<dyn Error>> {
         let sub_connection = self.connection.create_sub_connection().await?;
         async_std::task::spawn(async move {
-            increment_gauge!(crate::METRICS_PROXY_LIVE, 1.0);
+            gauge!(crate::METRICS_PROXY_LIVE).increment(1.0);
             let domain = conn.domain().to_string();
             log::info!("start proxy tunnel for domain {}", domain);
             let (mut reader1, mut writer1) = sub_connection.split();
@@ -82,7 +82,7 @@ where
             }
 
             log::info!("end proxy tunnel for domain {}", domain);
-            increment_gauge!(crate::METRICS_PROXY_LIVE, -1.0);
+            gauge!(crate::METRICS_PROXY_LIVE).increment(-1.0);
         });
         Ok(())
     }
