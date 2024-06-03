@@ -16,7 +16,7 @@ use crate::{
 };
 use async_std::{prelude::FutureExt, sync::RwLock};
 use futures::{select, FutureExt as _};
-use metrics::{decrement_gauge, increment_counter, increment_gauge};
+use metrics::{counter, gauge};
 use protocol::cluster::{ClusterTunnelRequest, ClusterTunnelResponse};
 use rustls::pki_types::CertificateDer;
 
@@ -41,7 +41,7 @@ pub async fn tunnel_task<'a>(
         }
         _ => {}
     }
-    increment_counter!(METRICS_PROXY_COUNT);
+    counter!(METRICS_PROXY_COUNT).increment(1);
     log::info!("proxy_tunnel.domain(): {}", proxy_tunnel.domain());
     let domain = proxy_tunnel.domain().to_string();
     let home_id = home_id_from_domain(&domain);
@@ -107,8 +107,8 @@ async fn tunnel_over_cluster<'a>(
     }
 
     log::info!("start cluster proxy tunnel for domain {}", domain);
-    increment_counter!(METRICS_CLUSTER_COUNT);
-    increment_gauge!(METRICS_CLUSTER_LIVE, 1.0);
+    counter!(METRICS_CLUSTER_COUNT).increment(1);
+    gauge!(METRICS_CLUSTER_LIVE).increment(1.0);
 
     let (mut reader1, mut writer1) = proxy_tunnel.split();
     let job1 = futures::io::copy(&mut reader1, &mut send);
@@ -128,6 +128,6 @@ async fn tunnel_over_cluster<'a>(
     }
 
     log::info!("end cluster proxy tunnel for domain {}", domain);
-    decrement_gauge!(METRICS_CLUSTER_LIVE, 1.0);
+    gauge!(METRICS_CLUSTER_LIVE).decrement(1.0);
     Ok(())
 }
