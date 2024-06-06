@@ -111,7 +111,12 @@ fn configure_client(
     };
 
     let mut transport = TransportConfig::default();
-    transport.keep_alive_interval(Some(Duration::from_secs(3)));
+    transport.keep_alive_interval(Some(Duration::from_secs(15)));
+    transport.max_idle_timeout(Some(
+        Duration::from_secs(30)
+            .try_into()
+            .expect("Should config timeout"),
+    ));
     config.transport_config(Arc::new(transport));
     Ok(config)
 }
@@ -128,18 +133,18 @@ impl SkipServerVerification {
 impl ServerCertVerifier for SkipServerVerification {
     fn verify_tls12_signature(
         &self,
-        message: &[u8],
-        cert: &CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
         Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
     }
 
     fn verify_tls13_signature(
         &self,
-        message: &[u8],
-        cert: &CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
         Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
     }
@@ -150,11 +155,11 @@ impl ServerCertVerifier for SkipServerVerification {
 
     fn verify_server_cert(
         &self,
-        end_entity: &CertificateDer<'_>,
-        intermediates: &[CertificateDer<'_>],
-        server_name: &rustls::pki_types::ServerName<'_>,
-        ocsp_response: &[u8],
-        now: rustls::pki_types::UnixTime,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
     ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
         Ok(rustls::client::danger::ServerCertVerified::assertion())
     }
