@@ -49,7 +49,7 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Debug>
                     stream.write_all(&res).await?;
                     Ok(AgentTcpConnection {
                         domain,
-                        connector: yamux::Connection::new(
+                        connection: yamux::Connection::new(
                             stream,
                             Default::default(),
                             yamux::Mode::Client,
@@ -104,7 +104,7 @@ impl<
 
 pub struct AgentTcpConnection {
     domain: String,
-    connector: yamux::Connection<TcpStream>,
+    connection: yamux::Connection<TcpStream>,
 }
 
 #[async_trait::async_trait]
@@ -117,7 +117,7 @@ impl AgentConnection<AgentTcpSubConnection, ReadHalf<yamux::Stream>, WriteHalf<y
 
     async fn create_sub_connection(&mut self) -> Result<AgentTcpSubConnection, Box<dyn Error>> {
         let client = OpenStreamsClient {
-            connection: &mut self.connector,
+            connection: &mut self.connection,
         };
         Ok(AgentTcpSubConnection {
             stream: client.await?,
@@ -125,12 +125,13 @@ impl AgentConnection<AgentTcpSubConnection, ReadHalf<yamux::Stream>, WriteHalf<y
     }
 
     async fn recv(&mut self) -> Result<AgentTcpSubConnection, Box<dyn Error>> {
-        loop {
-            //TODO handle sub connection
-            RecvStreamsClient {
-                connection: &mut self.connector,
-            }
-            .await?;
+        // TODO fix create_sub_connection issue. I don't know why yamux is success full create at agent
+        // but relay don't received any connection
+        let mux_server = YamuxConnectionServer::new(&mut self.connection);
+        match mux_server.await {
+            Ok(Some(stream)) => Ok(AgentTcpSubConnection { stream }),
+            Ok(None) => Err("yamux server poll next inbound return None".into()),
+            Err(e) => Err(e.into()),
         }
     }
 }
@@ -168,23 +169,28 @@ where
 }
 
 #[derive(Debug)]
-pub struct RecvStreamsClient<'a, T> {
+pub struct YamuxConnectionServer<'a, T> {
     connection: &'a mut yamux::Connection<T>,
 }
 
-impl<'a, T> Future for RecvStreamsClient<'a, T>
+impl<'a, T> YamuxConnectionServer<'a, T> {
+    pub fn new(connection: &'a mut yamux::Connection<T>) -> Self {
+        Self { connection }
+    }
+}
+
+impl<'a, T> Future for YamuxConnectionServer<'a, T>
 where
     T: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
 {
-    type Output = Result<(), Box<dyn Error>>;
+    type Output = yamux::Result<Option<yamux::Stream>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
-        match this.connection.poll_next_inbound(cx) {
-            Poll::Ready(Some(Ok(_stream))) => return Poll::Ready(Ok(())),
-            Poll::Ready(Some(Err(e))) => return Poll::Ready(Err(e.into())),
-            Poll::Ready(None) => {
-                return Poll::Ready(Err("yamux server poll next inbound return None".into()))
+        match this.connection.poll_next_inbound(cx)? {
+            Poll::Ready(stream) => {
+                log::info!("YamuxConnectionServer new stream");
+                Poll::Ready(Ok(stream))
             }
             Poll::Pending => Poll::Pending,
         }

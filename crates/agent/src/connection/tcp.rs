@@ -1,6 +1,6 @@
 use std::{
     error::Error,
-    net::{SocketAddr, ToSocketAddrs},
+    net::ToSocketAddrs,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -74,7 +74,15 @@ impl<RES: Send + Sync>
     for TcpConnection<RES>
 {
     async fn create_outgoing(&mut self) -> Result<TcpSubConnection, Box<dyn Error>> {
-        todo!()
+        // TODO fix create_sub_connection issue. I don't know why yamux is success full create at agent
+        // but relay don't received any connection
+        let mux_client = OpenStreamsClient {
+            connection: &mut self.conn,
+        };
+        match mux_client.await {
+            Ok(stream) => Ok(TcpSubConnection::new(stream)),
+            Err(e) => Err(e.into()),
+        }
     }
 
     async fn recv(&mut self) -> Result<TcpSubConnection, Box<dyn Error>> {
@@ -111,6 +119,26 @@ where
                 log::info!("YamuxConnectionServer new stream");
                 Poll::Ready(Ok(stream))
             }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct OpenStreamsClient<'a, T> {
+    connection: &'a mut yamux::Connection<T>,
+}
+
+impl<'a, T> Future for OpenStreamsClient<'a, T>
+where
+    T: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
+{
+    type Output = yamux::Result<yamux::Stream>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        match this.connection.poll_new_outbound(cx) {
+            Poll::Ready(stream) => return Poll::Ready(stream),
             Poll::Pending => Poll::Pending,
         }
     }

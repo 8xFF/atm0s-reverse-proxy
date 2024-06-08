@@ -6,10 +6,12 @@ use atm0s_reverse_proxy_relayer::{
 use atm0s_sdn::{NodeAddr, NodeId};
 use clap::Parser;
 #[cfg(feature = "expose-metrics")]
-use metrics_dashboard::build_dashboard_route;
+use metrics_dashboard::{build_dashboard_route, DashboardOptions};
 #[cfg(feature = "expose-metrics")]
 use poem::{listener::TcpListener, middleware::Tracing, EndpointExt as _, Route, Server};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
+#[cfg(feature = "expose-metrics")]
+use std::net::{Ipv4Addr, SocketAddrV4};
 use std::{collections::HashMap, net::SocketAddr, process::exit, sync::Arc};
 
 use async_std::sync::RwLock;
@@ -107,7 +109,13 @@ async fn main() {
 
     #[cfg(feature = "expose-metrics")]
     let app = Route::new()
-        .nest("/dashboard/", build_dashboard_route())
+        .nest(
+            "/dashboard/",
+            build_dashboard_route(DashboardOptions {
+                custom_charts: vec![],
+                include_default: true,
+            }),
+        )
         .with(Tracing);
 
     describe_counter!(METRICS_AGENT_COUNT, "Sum agent connect count");
@@ -116,8 +124,12 @@ async fn main() {
     describe_gauge!(METRICS_PROXY_LIVE, "Live proxy count");
 
     #[cfg(feature = "expose-metrics")]
+    let api_port = args.api_port;
+    #[cfg(feature = "expose-metrics")]
     async_std::task::spawn(async move {
-        let _ = Server::new(TcpListener::bind("0.0.0.0:33334"))
+        log::warn!("Started api server");
+        let addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, api_port);
+        let _ = Server::new(TcpListener::bind(SocketAddr::V4(addr)))
             .name("relay-metrics")
             .run(app)
             .await;

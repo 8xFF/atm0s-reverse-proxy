@@ -1,6 +1,6 @@
-RUST_LOG=debug cargo run -- \
+RUST_LOG=info cargo run -- \
     --connector-protocol quic \
-    --connector-addr https://local.ha.8xff.io:13001 \
+    --connector-addr https://127.0.0.1:13001 \
     --http-dest 127.0.0.1:8080 \
     --https-dest 127.0.0.1:8443 \
     --allow-quic-insecure
