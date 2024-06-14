@@ -1,8 +1,6 @@
 use std::{
-    collections::HashMap,
     error::Error,
     net::{SocketAddr, SocketAddrV4},
-    sync::Arc,
     time::Duration,
 };
 
@@ -12,9 +10,9 @@ use crate::{
         ProxyTunnel,
     },
     utils::home_id_from_domain,
-    METRICS_CLUSTER_COUNT, METRICS_CLUSTER_LIVE, METRICS_PROXY_COUNT,
+    AgentStore, METRICS_CLUSTER_COUNT, METRICS_CLUSTER_LIVE, METRICS_PROXY_COUNT,
 };
-use async_std::{prelude::FutureExt, sync::RwLock};
+use async_std::prelude::FutureExt;
 use futures::{select, FutureExt as _};
 use metrics::{counter, gauge};
 use protocol::cluster::{ClusterTunnelRequest, ClusterTunnelResponse};
@@ -27,7 +25,7 @@ pub enum TunnelContext<'a> {
 
 pub async fn tunnel_task<'a>(
     mut proxy_tunnel: Box<dyn ProxyTunnel>,
-    agents: Arc<RwLock<HashMap<u64, async_std::channel::Sender<Box<dyn ProxyTunnel>>>>>,
+    agents: AgentStore,
     context: TunnelContext<'a>,
 ) {
     match proxy_tunnel.wait().timeout(Duration::from_secs(5)).await {
@@ -45,7 +43,7 @@ pub async fn tunnel_task<'a>(
     log::info!("proxy_tunnel.domain(): {}", proxy_tunnel.domain());
     let domain = proxy_tunnel.domain().to_string();
     let home_id = home_id_from_domain(&domain);
-    if let Some(agent_tx) = agents.read().await.get(&home_id) {
+    if let Some(agent_tx) = agents.get(home_id) {
         agent_tx.send(proxy_tunnel).await.ok();
     } else if let TunnelContext::Local(node_alias_sdk, virtual_net, server_certs) = context {
         if let Err(e) = tunnel_over_cluster(

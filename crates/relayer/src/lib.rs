@@ -2,9 +2,8 @@
 use metrics_dashboard::build_dashboard_route;
 #[cfg(feature = "expose-metrics")]
 use poem::{listener::TcpListener, middleware::Tracing, EndpointExt as _, Route, Server};
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
-use async_std::sync::RwLock;
 use futures::{AsyncRead, AsyncWrite};
 use metrics::{counter, gauge};
 
@@ -18,6 +17,7 @@ pub const METRICS_CLUSTER_COUNT: &str = "atm0s_proxy_cluster_count";
 pub const METRICS_PROXY_LIVE: &str = "atm0s_proxy_proxy_live";
 
 mod agent_listener;
+mod agent_store;
 mod agent_worker;
 mod proxy_listener;
 mod tunnel;
@@ -39,11 +39,12 @@ pub use proxy_listener::cluster::{run_sdn, ProxyClusterListener, ProxyClusterTun
 pub use proxy_listener::http::{ProxyHttpListener, ProxyHttpTunnel};
 pub use proxy_listener::{ProxyListener, ProxyTunnel};
 
+pub use agent_store::AgentStore;
 pub use tunnel::{tunnel_task, TunnelContext};
 
 pub async fn run_agent_connection<AG, S, R, W>(
     agent_connection: AG,
-    agents: Arc<RwLock<HashMap<u64, async_std::channel::Sender<Box<dyn ProxyTunnel>>>>>,
+    agents: AgentStore,
     node_alias_sdk: AliasSdk,
     agent_rpc_handler: Arc<dyn AgentConnectionHandler<S, R, W>>,
 ) where
@@ -58,10 +59,7 @@ pub async fn run_agent_connection<AG, S, R, W>(
     let (mut agent_worker, proxy_tunnel_tx) =
         agent_worker::AgentWorker::<AG, S, R, W>::new(agent_connection, agent_rpc_handler);
     let home_id = home_id_from_domain(&domain);
-    agents
-        .write()
-        .await
-        .insert(home_id.clone(), proxy_tunnel_tx);
+    agents.add(home_id.clone(), proxy_tunnel_tx);
     node_alias_sdk.register_alias(home_id.clone()).await;
     let agents = agents.clone();
     async_std::task::spawn(async move {
@@ -76,7 +74,7 @@ pub async fn run_agent_connection<AG, S, R, W>(
                 }
             }
         }
-        agents.write().await.remove(&home_id);
+        agents.remove(home_id);
         node_alias_sdk
             .unregister_alias(home_id_from_domain(&domain))
             .await;
