@@ -1,7 +1,8 @@
 use atm0s_reverse_proxy_relayer::{
     run_agent_connection, run_sdn, tunnel_task, AgentIncommingConnHandlerDummy, AgentListener,
-    AgentQuicListener, AgentTcpListener, ProxyHttpListener, ProxyListener, TunnelContext,
-    METRICS_AGENT_COUNT, METRICS_AGENT_LIVE, METRICS_PROXY_COUNT, METRICS_PROXY_LIVE,
+    AgentQuicListener, AgentStore, AgentTcpListener, ProxyHttpListener, ProxyListener,
+    TunnelContext, METRICS_AGENT_COUNT, METRICS_AGENT_LIVE, METRICS_PROXY_COUNT,
+    METRICS_PROXY_LIVE,
 };
 use atm0s_sdn::{NodeAddr, NodeId};
 use clap::Parser;
@@ -105,7 +106,7 @@ async fn main() {
     let mut proxy_tls_listener = ProxyHttpListener::new(args.https_port, true)
         .await
         .expect("Should listen tls port");
-    let agents = Arc::new(RwLock::new(HashMap::new()));
+    let agents = AgentStore::new();
 
     #[cfg(feature = "expose-metrics")]
     let app = Route::new()
