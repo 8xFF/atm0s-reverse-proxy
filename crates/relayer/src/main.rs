@@ -2,7 +2,11 @@ use atm0s_reverse_proxy_relayer::{
     run_agent_connection, run_sdn, tunnel_task, AgentIncommingConnHandlerDummy, AgentListener,
     AgentQuicListener, AgentStore, AgentTcpListener, ProxyHttpListener, ProxyListener,
     TunnelContext, METRICS_AGENT_COUNT, METRICS_AGENT_LIVE, METRICS_PROXY_AGENT_COUNT,
-    METRICS_PROXY_AGENT_LIVE,
+    METRICS_PROXY_AGENT_ERROR_COUNT, METRICS_PROXY_AGENT_LIVE, METRICS_PROXY_CLUSTER_COUNT,
+    METRICS_PROXY_CLUSTER_ERROR_COUNT, METRICS_PROXY_CLUSTER_LIVE, METRICS_PROXY_HTTP_COUNT,
+    METRICS_PROXY_HTTP_ERROR_COUNT, METRICS_PROXY_HTTP_LIVE, METRICS_TUNNEL_AGENT_COUNT,
+    METRICS_TUNNEL_AGENT_ERROR_COUNT, METRICS_TUNNEL_AGENT_LIVE, METRICS_TUNNEL_CLUSTER_COUNT,
+    METRICS_TUNNEL_CLUSTER_ERROR_COUNT, METRICS_TUNNEL_CLUSTER_LIVE,
 };
 use atm0s_sdn::{NodeAddr, NodeId};
 use clap::Parser;
@@ -118,10 +122,67 @@ async fn main() {
         )
         .with(Tracing);
 
-    describe_counter!(METRICS_AGENT_COUNT, "Sum agent connect count");
+    // this is for online agent counting
     describe_gauge!(METRICS_AGENT_LIVE, "Live agent count");
-    describe_counter!(METRICS_PROXY_AGENT_COUNT, "Sum proxy connect count");
-    describe_gauge!(METRICS_PROXY_AGENT_LIVE, "Live proxy count");
+    describe_counter!(METRICS_AGENT_COUNT, "Number of connected agents");
+
+    // this is for proxy from agent counting (incomming)
+    describe_gauge!(
+        METRICS_PROXY_AGENT_LIVE,
+        "Live incoming proxy from agent to cluster"
+    );
+    describe_counter!(
+        METRICS_PROXY_AGENT_COUNT,
+        "Number of incoming proxy from agent to cluster"
+    );
+    describe_counter!(
+        METRICS_PROXY_AGENT_ERROR_COUNT,
+        "Number of incoming proxy error from agent to cluster"
+    );
+
+    // this is for http proxy counting (incomming)
+    describe_gauge!(METRICS_PROXY_HTTP_LIVE, "Live incoming http proxy");
+    describe_counter!(METRICS_PROXY_HTTP_COUNT, "Number of incoming http proxy");
+    describe_counter!(
+        METRICS_PROXY_HTTP_ERROR_COUNT,
+        "Number of incoming http proxy error"
+    );
+
+    // this is for cluster proxy (incomming)
+    describe_gauge!(METRICS_PROXY_CLUSTER_LIVE, "Live incoming cluster proxy");
+    describe_counter!(
+        METRICS_PROXY_CLUSTER_COUNT,
+        "Number of incoming cluster proxy"
+    );
+    describe_counter!(
+        METRICS_PROXY_CLUSTER_ERROR_COUNT,
+        "Number of incoming cluster proxy error"
+    );
+
+    // this is for tunnel from local node to other node (outgoing)
+    describe_gauge!(
+        METRICS_TUNNEL_CLUSTER_LIVE,
+        "Live outgoing tunnel to cluster"
+    );
+    describe_counter!(
+        METRICS_TUNNEL_CLUSTER_COUNT,
+        "Number of outging tunnel to cluster"
+    );
+    describe_counter!(
+        METRICS_TUNNEL_CLUSTER_ERROR_COUNT,
+        "Number of outgoing tunnel to cluster error"
+    );
+
+    // this is for tunnel from local node to agent  (outgoing)
+    describe_gauge!(METRICS_TUNNEL_AGENT_LIVE, "Live outoging tunnel to agent");
+    describe_counter!(
+        METRICS_TUNNEL_AGENT_COUNT,
+        "Number of outgoing tunnel to agent"
+    );
+    describe_counter!(
+        METRICS_TUNNEL_AGENT_ERROR_COUNT,
+        "Number of outgoing tunnel to agent error"
+    );
 
     #[cfg(feature = "expose-metrics")]
     let api_port = args.api_port;
