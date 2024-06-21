@@ -9,12 +9,34 @@ use metrics::{counter, gauge};
 
 use crate::utils::home_id_from_domain;
 
-pub const METRICS_AGENT_COUNT: &str = "atm0s_proxy_agent_count";
-pub const METRICS_AGENT_LIVE: &str = "atm0s_proxy_agent_live";
-pub const METRICS_PROXY_COUNT: &str = "atm0s_proxy_proxy_count";
-pub const METRICS_CLUSTER_LIVE: &str = "atm0s_proxy_cluster_live";
-pub const METRICS_CLUSTER_COUNT: &str = "atm0s_proxy_cluster_count";
-pub const METRICS_PROXY_LIVE: &str = "atm0s_proxy_proxy_live";
+// this is for online agent counting
+pub const METRICS_AGENT_LIVE: &str = "atm0s_agent_live";
+pub const METRICS_AGENT_COUNT: &str = "atm0s_agent_count";
+
+// this is for proxy from agent counting (incomming)
+pub const METRICS_PROXY_AGENT_LIVE: &str = "atm0s_proxy_agent_live";
+pub const METRICS_PROXY_AGENT_COUNT: &str = "atm0s_proxy_agent_count";
+pub const METRICS_PROXY_AGENT_ERROR_COUNT: &str = "atm0s_proxy_agent_error_count";
+
+// this is for http proxy counting (incomming)
+pub const METRICS_PROXY_HTTP_LIVE: &str = "atm0s_proxy_http_live";
+pub const METRICS_PROXY_HTTP_COUNT: &str = "atm0s_proxy_http_count";
+pub const METRICS_PROXY_HTTP_ERROR_COUNT: &str = "atm0s_proxy_http_error_count";
+
+// this is for cluster proxy (incomming)
+pub const METRICS_PROXY_CLUSTER_LIVE: &str = "atm0s_proxy_cluster_live";
+pub const METRICS_PROXY_CLUSTER_COUNT: &str = "atm0s_proxy_cluster_count";
+pub const METRICS_PROXY_CLUSTER_ERROR_COUNT: &str = "atm0s_proxy_cluster_error_count";
+
+// this is for tunnel from local node to other node (outgoing)
+pub const METRICS_TUNNEL_CLUSTER_LIVE: &str = "atm0s_tunnel_cluster_live";
+pub const METRICS_TUNNEL_CLUSTER_COUNT: &str = "atm0s_tunnel_cluster_count";
+pub const METRICS_TUNNEL_CLUSTER_ERROR_COUNT: &str = "atm0s_tunnel_cluster_error_count";
+
+// this is for tunnel from local node to agent  (outgoing)
+pub const METRICS_TUNNEL_AGENT_LIVE: &str = "atm0s_tunnel_agent_live";
+pub const METRICS_TUNNEL_AGENT_COUNT: &str = "atm0s_tunnel_agent_count";
+pub const METRICS_TUNNEL_AGENT_ERROR_COUNT: &str = "atm0s_tunnel_agent_error_count";
 
 mod agent_listener;
 mod agent_store;

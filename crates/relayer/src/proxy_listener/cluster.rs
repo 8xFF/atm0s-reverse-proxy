@@ -227,6 +227,9 @@ impl ProxyTunnel for ProxyClusterTunnel {
         self.streams = Some((Box::new(recv), Box::new(send)));
         Some(())
     }
+    fn local(&self) -> bool {
+        false
+    }
     fn domain(&self) -> &str {
         &self.domain
     }

@@ -10,7 +10,9 @@ use crate::{
         ProxyTunnel,
     },
     utils::home_id_from_domain,
-    AgentStore, METRICS_CLUSTER_COUNT, METRICS_CLUSTER_LIVE, METRICS_PROXY_COUNT,
+    AgentStore, METRICS_PROXY_CLUSTER_COUNT, METRICS_PROXY_CLUSTER_ERROR_COUNT,
+    METRICS_PROXY_CLUSTER_LIVE, METRICS_PROXY_HTTP_COUNT, METRICS_PROXY_HTTP_ERROR_COUNT,
+    METRICS_PROXY_HTTP_LIVE,
 };
 use async_std::prelude::FutureExt;
 use futures::{select, FutureExt as _};
@@ -23,29 +25,53 @@ pub enum TunnelContext<'a> {
     Local(AliasSdk, VirtualUdpSocket, Vec<CertificateDer<'a>>),
 }
 
+impl<'a> TunnelContext<'a> {
+    fn is_local(&self) -> bool {
+        matches!(self, Self::Local(..))
+    }
+}
+
 pub async fn tunnel_task<'a>(
     mut proxy_tunnel: Box<dyn ProxyTunnel>,
     agents: AgentStore,
     context: TunnelContext<'a>,
 ) {
+    if context.is_local() {
+        counter!(METRICS_PROXY_HTTP_COUNT).increment(1);
+    } else {
+        counter!(METRICS_PROXY_CLUSTER_COUNT).increment(1);
+    }
     match proxy_tunnel.wait().timeout(Duration::from_secs(5)).await {
         Err(_) => {
             log::error!("proxy_tunnel.wait() for checking url timeout");
+            if context.is_local() {
+                counter!(METRICS_PROXY_HTTP_ERROR_COUNT).increment(1);
+            } else {
+                counter!(METRICS_PROXY_CLUSTER_ERROR_COUNT).increment(1);
+            }
             return;
         }
         Ok(None) => {
             log::error!("proxy_tunnel.wait() for checking url invalid");
+            if context.is_local() {
+                counter!(METRICS_PROXY_HTTP_ERROR_COUNT).increment(1);
+            } else {
+                counter!(METRICS_PROXY_CLUSTER_ERROR_COUNT).increment(1);
+            }
             return;
         }
         _ => {}
     }
-    counter!(METRICS_PROXY_COUNT).increment(1);
+
     log::info!("proxy_tunnel.domain(): {}", proxy_tunnel.domain());
     let domain = proxy_tunnel.domain().to_string();
     let home_id = home_id_from_domain(&domain);
     if let Some(agent_tx) = agents.get(home_id) {
         agent_tx.send(proxy_tunnel).await.ok();
     } else if let TunnelContext::Local(node_alias_sdk, virtual_net, server_certs) = context {
+        counter!(METRICS_PROXY_CLUSTER_COUNT).increment(1);
+        gauge!(METRICS_PROXY_CLUSTER_LIVE).increment(1.0);
+        gauge!(METRICS_PROXY_HTTP_LIVE).increment(1.0);
         if let Err(e) = tunnel_over_cluster(
             domain,
             proxy_tunnel,
@@ -56,7 +82,13 @@ pub async fn tunnel_task<'a>(
         .await
         {
             log::error!("tunnel_over_cluster error: {}", e);
+            counter!(METRICS_PROXY_CLUSTER_ERROR_COUNT).increment(1);
         }
+        gauge!(METRICS_PROXY_CLUSTER_LIVE).decrement(1.0);
+        gauge!(METRICS_PROXY_HTTP_LIVE).decrement(1.0);
+    } else {
+        log::warn!("dont support tunnel over 2 relayed, it should be single e2e quic connection");
+        counter!(METRICS_PROXY_CLUSTER_ERROR_COUNT).increment(1);
     }
 }
 
@@ -105,8 +137,6 @@ async fn tunnel_over_cluster<'a>(
     }
 
     log::info!("start cluster proxy tunnel for domain {}", domain);
-    counter!(METRICS_CLUSTER_COUNT).increment(1);
-    gauge!(METRICS_CLUSTER_LIVE).increment(1.0);
 
     let (mut reader1, mut writer1) = proxy_tunnel.split();
     let job1 = futures::io::copy(&mut reader1, &mut send);
@@ -126,6 +156,5 @@ async fn tunnel_over_cluster<'a>(
     }
 
     log::info!("end cluster proxy tunnel for domain {}", domain);
-    gauge!(METRICS_CLUSTER_LIVE).decrement(1.0);
     Ok(())
 }

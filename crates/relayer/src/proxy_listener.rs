@@ -8,6 +8,7 @@ pub mod http;
 #[async_trait::async_trait]
 pub trait ProxyTunnel: Send + Sync {
     async fn wait(&mut self) -> Option<()>;
+    fn local(&self) -> bool;
     fn domain(&self) -> &str;
     fn split(
         &mut self,

@@ -72,6 +72,10 @@ impl ProxyTunnel for ProxyHttpTunnel {
         Some(())
     }
 
+    fn local(&self) -> bool {
+        true
+    }
+
     fn domain(&self) -> &str {
         &self.domain
     }

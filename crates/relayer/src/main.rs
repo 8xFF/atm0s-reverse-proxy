@@ -1,8 +1,8 @@
 use atm0s_reverse_proxy_relayer::{
     run_agent_connection, run_sdn, tunnel_task, AgentIncommingConnHandlerDummy, AgentListener,
     AgentQuicListener, AgentStore, AgentTcpListener, ProxyHttpListener, ProxyListener,
-    TunnelContext, METRICS_AGENT_COUNT, METRICS_AGENT_LIVE, METRICS_PROXY_COUNT,
-    METRICS_PROXY_LIVE,
+    TunnelContext, METRICS_AGENT_COUNT, METRICS_AGENT_LIVE, METRICS_PROXY_AGENT_COUNT,
+    METRICS_PROXY_AGENT_LIVE,
 };
 use atm0s_sdn::{NodeAddr, NodeId};
 use clap::Parser;
@@ -13,9 +13,8 @@ use poem::{listener::TcpListener, middleware::Tracing, EndpointExt as _, Route, 
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 #[cfg(feature = "expose-metrics")]
 use std::net::{Ipv4Addr, SocketAddrV4};
-use std::{collections::HashMap, net::SocketAddr, process::exit, sync::Arc};
+use std::{net::SocketAddr, process::exit, sync::Arc};
 
-use async_std::sync::RwLock;
 use futures::{select, FutureExt};
 use metrics::{describe_counter, describe_gauge};
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt, EnvFilter};
@@ -121,8 +120,8 @@ async fn main() {
 
     describe_counter!(METRICS_AGENT_COUNT, "Sum agent connect count");
     describe_gauge!(METRICS_AGENT_LIVE, "Live agent count");
-    describe_counter!(METRICS_PROXY_COUNT, "Sum proxy connect count");
-    describe_gauge!(METRICS_PROXY_LIVE, "Live proxy count");
+    describe_counter!(METRICS_PROXY_AGENT_COUNT, "Sum proxy connect count");
+    describe_gauge!(METRICS_PROXY_AGENT_LIVE, "Live proxy count");
 
     #[cfg(feature = "expose-metrics")]
     let api_port = args.api_port;
