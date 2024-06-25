@@ -1,7 +1,7 @@
-use std::{error::Error, marker::PhantomData, sync::Arc};
+use std::{error::Error, marker::PhantomData, sync::Arc, time::Instant};
 
 use futures::{select, AsyncRead, AsyncWrite, FutureExt};
-use metrics::{counter, gauge};
+use metrics::{counter, gauge, histogram};
 
 enum IncommingConn<
     S: AgentSubConnection<R, W>,
@@ -15,9 +15,10 @@ enum IncommingConn<
 use crate::{
     agent_listener::{AgentConnection, AgentConnectionHandler, AgentSubConnection},
     proxy_listener::ProxyTunnel,
+    utils::latency_to_label,
     METRICS_PROXY_AGENT_COUNT, METRICS_PROXY_AGENT_ERROR_COUNT, METRICS_PROXY_AGENT_LIVE,
     METRICS_PROXY_CLUSTER_LIVE, METRICS_PROXY_HTTP_LIVE, METRICS_TUNNEL_AGENT_COUNT,
-    METRICS_TUNNEL_AGENT_ERROR_COUNT, METRICS_TUNNEL_AGENT_LIVE,
+    METRICS_TUNNEL_AGENT_ERROR_COUNT, METRICS_TUNNEL_AGENT_HISTOGRAM, METRICS_TUNNEL_AGENT_LIVE,
 };
 
 pub struct AgentWorker<AG, S, R, W>
@@ -61,7 +62,10 @@ where
         mut conn: Box<dyn ProxyTunnel>,
     ) -> Result<(), Box<dyn Error>> {
         counter!(METRICS_TUNNEL_AGENT_COUNT).increment(1);
+        let started = Instant::now();
         let sub_connection = self.connection.create_sub_connection().await?;
+        histogram!(METRICS_TUNNEL_AGENT_HISTOGRAM, "init_ms" => latency_to_label(started));
+
         async_std::task::spawn(async move {
             if conn.local() {
                 gauge!(METRICS_PROXY_HTTP_LIVE).increment(1.0);
@@ -96,7 +100,7 @@ where
             } else {
                 gauge!(METRICS_PROXY_CLUSTER_LIVE).decrement(1.0);
             }
-            gauge!(crate::METRICS_TUNNEL_AGENT_LIVE).decrement(1.0);
+            gauge!(METRICS_TUNNEL_AGENT_LIVE).decrement(1.0);
         });
         Ok(())
     }

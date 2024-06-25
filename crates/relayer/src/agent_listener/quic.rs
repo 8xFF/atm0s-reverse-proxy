@@ -1,12 +1,20 @@
 use std::{
-    error::Error, fmt::Debug, marker::PhantomData, net::SocketAddr, sync::Arc, time::Duration,
+    error::Error,
+    fmt::Debug,
+    marker::PhantomData,
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, Instant},
 };
 
 use async_std::channel::Receiver;
+use metrics::histogram;
 use protocol::key::ClusterValidator;
 use quinn::{Endpoint, RecvStream, SendStream, ServerConfig};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use serde::de::DeserializeOwned;
+
+use crate::{utils::latency_to_label, METRICS_AGENT_HISTOGRAM};
 
 use super::{AgentConnection, AgentListener, AgentSubConnection};
 
@@ -47,8 +55,10 @@ impl<REQ: DeserializeOwned + Debug> AgentQuicListener<REQ> {
                         "[AgentQuicListener] new conn from {}",
                         conn.remote_address()
                     );
+                    let started = Instant::now();
                     match Self::process_incoming_conn(cluster_validator, conn).await {
                         Ok(connection) => {
+                            histogram!(METRICS_AGENT_HISTOGRAM, "accept" => latency_to_label(started));
                             log::info!("new connection {}", connection.domain());
                             if let Err(e) = tx.send(connection).await {
                                 log::error!("send new connection to main loop error {:?}", e);

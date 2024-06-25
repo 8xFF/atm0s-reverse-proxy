@@ -1,12 +1,14 @@
 use atm0s_reverse_proxy_relayer::{
     run_agent_connection, run_sdn, tunnel_task, AgentIncommingConnHandlerDummy, AgentListener,
     AgentQuicListener, AgentStore, AgentTcpListener, ProxyHttpListener, ProxyListener,
-    TunnelContext, METRICS_AGENT_COUNT, METRICS_AGENT_LIVE, METRICS_PROXY_AGENT_COUNT,
-    METRICS_PROXY_AGENT_ERROR_COUNT, METRICS_PROXY_AGENT_LIVE, METRICS_PROXY_CLUSTER_COUNT,
-    METRICS_PROXY_CLUSTER_ERROR_COUNT, METRICS_PROXY_CLUSTER_LIVE, METRICS_PROXY_HTTP_COUNT,
-    METRICS_PROXY_HTTP_ERROR_COUNT, METRICS_PROXY_HTTP_LIVE, METRICS_TUNNEL_AGENT_COUNT,
-    METRICS_TUNNEL_AGENT_ERROR_COUNT, METRICS_TUNNEL_AGENT_LIVE, METRICS_TUNNEL_CLUSTER_COUNT,
-    METRICS_TUNNEL_CLUSTER_ERROR_COUNT, METRICS_TUNNEL_CLUSTER_LIVE,
+    TunnelContext, METRICS_AGENT_COUNT, METRICS_AGENT_HISTOGRAM, METRICS_AGENT_LIVE,
+    METRICS_PROXY_AGENT_COUNT, METRICS_PROXY_AGENT_ERROR_COUNT, METRICS_PROXY_AGENT_HISTOGRAM,
+    METRICS_PROXY_AGENT_LIVE, METRICS_PROXY_CLUSTER_COUNT, METRICS_PROXY_CLUSTER_ERROR_COUNT,
+    METRICS_PROXY_CLUSTER_LIVE, METRICS_PROXY_HTTP_COUNT, METRICS_PROXY_HTTP_ERROR_COUNT,
+    METRICS_PROXY_HTTP_LIVE, METRICS_TUNNEL_AGENT_COUNT, METRICS_TUNNEL_AGENT_ERROR_COUNT,
+    METRICS_TUNNEL_AGENT_HISTOGRAM, METRICS_TUNNEL_AGENT_LIVE, METRICS_TUNNEL_CLUSTER_COUNT,
+    METRICS_TUNNEL_CLUSTER_ERROR_COUNT, METRICS_TUNNEL_CLUSTER_HISTOGRAM,
+    METRICS_TUNNEL_CLUSTER_LIVE,
 };
 use atm0s_sdn::{NodeAddr, NodeId};
 use clap::Parser;
@@ -20,7 +22,7 @@ use std::net::{Ipv4Addr, SocketAddrV4};
 use std::{net::SocketAddr, process::exit, sync::Arc};
 
 use futures::{select, FutureExt};
-use metrics::{describe_counter, describe_gauge};
+use metrics::{describe_counter, describe_gauge, describe_histogram};
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt, EnvFilter};
 
 /// A HTTP and SNI HTTPs proxy for expose your local service to the internet.
@@ -124,6 +126,10 @@ async fn main() {
 
     // this is for online agent counting
     describe_gauge!(METRICS_AGENT_LIVE, "Live agent count");
+    describe_histogram!(
+        METRICS_AGENT_HISTOGRAM,
+        "Incoming agent connection accept time histogram"
+    );
     describe_counter!(METRICS_AGENT_COUNT, "Number of connected agents");
 
     // this is for proxy from agent counting (incomming)
@@ -134,6 +140,10 @@ async fn main() {
     describe_counter!(
         METRICS_PROXY_AGENT_COUNT,
         "Number of incoming proxy from agent to cluster"
+    );
+    describe_histogram!(
+        METRICS_PROXY_AGENT_HISTOGRAM,
+        "Incoming proxy from agent to cluster latency histogram"
     );
     describe_counter!(
         METRICS_PROXY_AGENT_ERROR_COUNT,
@@ -166,7 +176,11 @@ async fn main() {
     );
     describe_counter!(
         METRICS_TUNNEL_CLUSTER_COUNT,
-        "Number of outging tunnel to cluster"
+        "Number of outgoing tunnel to cluster"
+    );
+    describe_histogram!(
+        METRICS_TUNNEL_CLUSTER_HISTOGRAM,
+        "Outgoing tunnel to cluster latency histogram"
     );
     describe_counter!(
         METRICS_TUNNEL_CLUSTER_ERROR_COUNT,
@@ -174,10 +188,14 @@ async fn main() {
     );
 
     // this is for tunnel from local node to agent  (outgoing)
-    describe_gauge!(METRICS_TUNNEL_AGENT_LIVE, "Live outoging tunnel to agent");
+    describe_gauge!(METRICS_TUNNEL_AGENT_LIVE, "Live outgoing tunnel to agent");
     describe_counter!(
         METRICS_TUNNEL_AGENT_COUNT,
         "Number of outgoing tunnel to agent"
+    );
+    describe_counter!(
+        METRICS_TUNNEL_AGENT_HISTOGRAM,
+        "Outgoing tunnel to agent latency histogram"
     );
     describe_counter!(
         METRICS_TUNNEL_AGENT_ERROR_COUNT,

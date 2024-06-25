@@ -11,11 +11,13 @@ use crate::utils::home_id_from_domain;
 
 // this is for online agent counting
 pub const METRICS_AGENT_LIVE: &str = "atm0s_agent_live";
+pub const METRICS_AGENT_HISTOGRAM: &str = "atm0s_agent_histogram";
 pub const METRICS_AGENT_COUNT: &str = "atm0s_agent_count";
 
 // this is for proxy from agent counting (incomming)
 pub const METRICS_PROXY_AGENT_LIVE: &str = "atm0s_proxy_agent_live";
 pub const METRICS_PROXY_AGENT_COUNT: &str = "atm0s_proxy_agent_count";
+pub const METRICS_PROXY_AGENT_HISTOGRAM: &str = "atm0s_proxy_agent_histogram";
 pub const METRICS_PROXY_AGENT_ERROR_COUNT: &str = "atm0s_proxy_agent_error_count";
 
 // this is for http proxy counting (incomming)
@@ -31,11 +33,13 @@ pub const METRICS_PROXY_CLUSTER_ERROR_COUNT: &str = "atm0s_proxy_cluster_error_c
 // this is for tunnel from local node to other node (outgoing)
 pub const METRICS_TUNNEL_CLUSTER_LIVE: &str = "atm0s_tunnel_cluster_live";
 pub const METRICS_TUNNEL_CLUSTER_COUNT: &str = "atm0s_tunnel_cluster_count";
+pub const METRICS_TUNNEL_CLUSTER_HISTOGRAM: &str = "atm0s_tunnel_cluster_histogram";
 pub const METRICS_TUNNEL_CLUSTER_ERROR_COUNT: &str = "atm0s_tunnel_cluster_error_count";
 
 // this is for tunnel from local node to agent  (outgoing)
 pub const METRICS_TUNNEL_AGENT_LIVE: &str = "atm0s_tunnel_agent_live";
 pub const METRICS_TUNNEL_AGENT_COUNT: &str = "atm0s_tunnel_agent_count";
+pub const METRICS_TUNNEL_AGENT_HISTOGRAM: &str = "atm0s_tunnel_agent_histogram";
 pub const METRICS_TUNNEL_AGENT_ERROR_COUNT: &str = "atm0s_tunnel_agent_error_count";
 
 mod agent_listener;

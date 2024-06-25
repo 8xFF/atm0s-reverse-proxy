@@ -1,7 +1,7 @@
 use std::{
     error::Error,
     net::{SocketAddr, SocketAddrV4},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use crate::{
@@ -9,14 +9,15 @@ use crate::{
         cluster::{make_quinn_client, AliasSdk, VirtualUdpSocket},
         ProxyTunnel,
     },
-    utils::home_id_from_domain,
+    utils::{home_id_from_domain, latency_to_label},
     AgentStore, METRICS_PROXY_CLUSTER_COUNT, METRICS_PROXY_CLUSTER_ERROR_COUNT,
-    METRICS_PROXY_CLUSTER_LIVE, METRICS_PROXY_HTTP_COUNT, METRICS_PROXY_HTTP_ERROR_COUNT,
-    METRICS_PROXY_HTTP_LIVE,
+    METRICS_PROXY_HTTP_COUNT, METRICS_PROXY_HTTP_ERROR_COUNT, METRICS_PROXY_HTTP_LIVE,
+    METRICS_TUNNEL_CLUSTER_COUNT, METRICS_TUNNEL_CLUSTER_ERROR_COUNT,
+    METRICS_TUNNEL_CLUSTER_HISTOGRAM, METRICS_TUNNEL_CLUSTER_LIVE,
 };
 use async_std::prelude::FutureExt;
 use futures::{select, FutureExt as _};
-use metrics::{counter, gauge};
+use metrics::{counter, gauge, histogram};
 use protocol::cluster::{ClusterTunnelRequest, ClusterTunnelResponse};
 use rustls::pki_types::CertificateDer;
 
@@ -69,8 +70,8 @@ pub async fn tunnel_task<'a>(
     if let Some(agent_tx) = agents.get(home_id) {
         agent_tx.send(proxy_tunnel).await.ok();
     } else if let TunnelContext::Local(node_alias_sdk, virtual_net, server_certs) = context {
-        counter!(METRICS_PROXY_CLUSTER_COUNT).increment(1);
-        gauge!(METRICS_PROXY_CLUSTER_LIVE).increment(1.0);
+        counter!(METRICS_TUNNEL_CLUSTER_COUNT).increment(1);
+        gauge!(METRICS_TUNNEL_CLUSTER_LIVE).increment(1.0);
         gauge!(METRICS_PROXY_HTTP_LIVE).increment(1.0);
         if let Err(e) = tunnel_over_cluster(
             domain,
@@ -82,9 +83,9 @@ pub async fn tunnel_task<'a>(
         .await
         {
             log::error!("tunnel_over_cluster error: {}", e);
-            counter!(METRICS_PROXY_CLUSTER_ERROR_COUNT).increment(1);
+            counter!(METRICS_TUNNEL_CLUSTER_ERROR_COUNT).increment(1);
         }
-        gauge!(METRICS_PROXY_CLUSTER_LIVE).decrement(1.0);
+        gauge!(METRICS_TUNNEL_CLUSTER_LIVE).decrement(1.0);
         gauge!(METRICS_PROXY_HTTP_LIVE).decrement(1.0);
     } else {
         log::warn!("dont support tunnel over 2 relayed, it should be single e2e quic connection");
@@ -99,6 +100,7 @@ async fn tunnel_over_cluster<'a>(
     socket: VirtualUdpSocket,
     server_certs: &'a [CertificateDer<'a>],
 ) -> Result<(), Box<dyn Error>> {
+    let started = Instant::now();
     log::warn!(
         "agent not found for domain: {} in local => finding in cluster",
         domain
@@ -119,6 +121,8 @@ async fn tunnel_over_cluster<'a>(
     log::info!("connected to agent for domain: {domain} in node {dest}");
     let (mut send, mut recv) = connection.open_bi().await?;
     log::info!("opened bi stream to agent for domain: {domain} in node {dest}");
+
+    histogram!(METRICS_TUNNEL_CLUSTER_HISTOGRAM, "init_ms" => latency_to_label(started));
 
     let req_buf: Vec<u8> = (&ClusterTunnelRequest {
         domain: domain.clone(),
