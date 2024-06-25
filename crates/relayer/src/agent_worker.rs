@@ -96,7 +96,7 @@ where
             } else {
                 gauge!(METRICS_PROXY_CLUSTER_LIVE).decrement(1.0);
             }
-            gauge!(crate::METRICS_TUNNEL_AGENT_LIVE).decrement(1.0);
+            gauge!(METRICS_TUNNEL_AGENT_LIVE).decrement(1.0);
         });
         Ok(())
     }

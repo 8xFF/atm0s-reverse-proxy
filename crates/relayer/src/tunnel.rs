@@ -11,8 +11,8 @@ use crate::{
     },
     utils::home_id_from_domain,
     AgentStore, METRICS_PROXY_CLUSTER_COUNT, METRICS_PROXY_CLUSTER_ERROR_COUNT,
-    METRICS_PROXY_CLUSTER_LIVE, METRICS_PROXY_HTTP_COUNT, METRICS_PROXY_HTTP_ERROR_COUNT,
-    METRICS_PROXY_HTTP_LIVE,
+    METRICS_PROXY_HTTP_COUNT, METRICS_PROXY_HTTP_ERROR_COUNT, METRICS_PROXY_HTTP_LIVE,
+    METRICS_TUNNEL_CLUSTER_COUNT, METRICS_TUNNEL_CLUSTER_ERROR_COUNT, METRICS_TUNNEL_CLUSTER_LIVE,
 };
 use async_std::prelude::FutureExt;
 use futures::{select, FutureExt as _};
@@ -69,8 +69,8 @@ pub async fn tunnel_task<'a>(
     if let Some(agent_tx) = agents.get(home_id) {
         agent_tx.send(proxy_tunnel).await.ok();
     } else if let TunnelContext::Local(node_alias_sdk, virtual_net, server_certs) = context {
-        counter!(METRICS_PROXY_CLUSTER_COUNT).increment(1);
-        gauge!(METRICS_PROXY_CLUSTER_LIVE).increment(1.0);
+        counter!(METRICS_TUNNEL_CLUSTER_COUNT).increment(1);
+        gauge!(METRICS_TUNNEL_CLUSTER_LIVE).increment(1.0);
         gauge!(METRICS_PROXY_HTTP_LIVE).increment(1.0);
         if let Err(e) = tunnel_over_cluster(
             domain,
@@ -82,9 +82,9 @@ pub async fn tunnel_task<'a>(
         .await
         {
             log::error!("tunnel_over_cluster error: {}", e);
-            counter!(METRICS_PROXY_CLUSTER_ERROR_COUNT).increment(1);
+            counter!(METRICS_TUNNEL_CLUSTER_ERROR_COUNT).increment(1);
         }
-        gauge!(METRICS_PROXY_CLUSTER_LIVE).decrement(1.0);
+        gauge!(METRICS_TUNNEL_CLUSTER_LIVE).decrement(1.0);
         gauge!(METRICS_PROXY_HTTP_LIVE).decrement(1.0);
     } else {
         log::warn!("dont support tunnel over 2 relayed, it should be single e2e quic connection");

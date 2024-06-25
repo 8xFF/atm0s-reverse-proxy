@@ -166,7 +166,7 @@ async fn main() {
     );
     describe_counter!(
         METRICS_TUNNEL_CLUSTER_COUNT,
-        "Number of outging tunnel to cluster"
+        "Number of outgoing tunnel to cluster"
     );
     describe_counter!(
         METRICS_TUNNEL_CLUSTER_ERROR_COUNT,
@@ -174,7 +174,7 @@ async fn main() {
     );
 
     // this is for tunnel from local node to agent  (outgoing)
-    describe_gauge!(METRICS_TUNNEL_AGENT_LIVE, "Live outoging tunnel to agent");
+    describe_gauge!(METRICS_TUNNEL_AGENT_LIVE, "Live outgoing tunnel to agent");
     describe_counter!(
         METRICS_TUNNEL_AGENT_COUNT,
         "Number of outgoing tunnel to agent"
