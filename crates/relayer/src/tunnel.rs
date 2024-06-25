@@ -1,7 +1,7 @@
 use std::{
     error::Error,
     net::{SocketAddr, SocketAddrV4},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use crate::{
@@ -9,14 +9,15 @@ use crate::{
         cluster::{make_quinn_client, AliasSdk, VirtualUdpSocket},
         ProxyTunnel,
     },
-    utils::home_id_from_domain,
+    utils::{home_id_from_domain, latency_to_label},
     AgentStore, METRICS_PROXY_CLUSTER_COUNT, METRICS_PROXY_CLUSTER_ERROR_COUNT,
     METRICS_PROXY_HTTP_COUNT, METRICS_PROXY_HTTP_ERROR_COUNT, METRICS_PROXY_HTTP_LIVE,
-    METRICS_TUNNEL_CLUSTER_COUNT, METRICS_TUNNEL_CLUSTER_ERROR_COUNT, METRICS_TUNNEL_CLUSTER_LIVE,
+    METRICS_TUNNEL_CLUSTER_COUNT, METRICS_TUNNEL_CLUSTER_ERROR_COUNT,
+    METRICS_TUNNEL_CLUSTER_HISTOGRAM, METRICS_TUNNEL_CLUSTER_LIVE,
 };
 use async_std::prelude::FutureExt;
 use futures::{select, FutureExt as _};
-use metrics::{counter, gauge};
+use metrics::{counter, gauge, histogram};
 use protocol::cluster::{ClusterTunnelRequest, ClusterTunnelResponse};
 use rustls::pki_types::CertificateDer;
 
@@ -99,6 +100,7 @@ async fn tunnel_over_cluster<'a>(
     socket: VirtualUdpSocket,
     server_certs: &'a [CertificateDer<'a>],
 ) -> Result<(), Box<dyn Error>> {
+    let started = Instant::now();
     log::warn!(
         "agent not found for domain: {} in local => finding in cluster",
         domain
@@ -119,6 +121,8 @@ async fn tunnel_over_cluster<'a>(
     log::info!("connected to agent for domain: {domain} in node {dest}");
     let (mut send, mut recv) = connection.open_bi().await?;
     log::info!("opened bi stream to agent for domain: {domain} in node {dest}");
+
+    histogram!(METRICS_TUNNEL_CLUSTER_HISTOGRAM, "init_ms" => latency_to_label(started));
 
     let req_buf: Vec<u8> = (&ClusterTunnelRequest {
         domain: domain.clone(),
