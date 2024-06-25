@@ -11,6 +11,7 @@ use crate::utils::home_id_from_domain;
 
 // this is for online agent counting
 pub const METRICS_AGENT_LIVE: &str = "atm0s_agent_live";
+pub const METRICS_AGENT_HISTOGRAM: &str = "atm0s_agent_histogram";
 pub const METRICS_AGENT_COUNT: &str = "atm0s_agent_count";
 
 // this is for proxy from agent counting (incomming)

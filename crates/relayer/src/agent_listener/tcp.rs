@@ -4,6 +4,7 @@ use std::{
     net::SocketAddr,
     pin::Pin,
     task::{Context, Poll},
+    time::Instant,
 };
 
 use async_std::net::{TcpListener, TcpStream};
@@ -11,8 +12,11 @@ use futures::{
     io::{ReadHalf, WriteHalf},
     AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Future,
 };
+use metrics::histogram;
 use protocol::key::ClusterValidator;
 use serde::de::DeserializeOwned;
+
+use crate::{utils::latency_to_label, METRICS_AGENT_HISTOGRAM};
 
 use super::{AgentConnection, AgentListener, AgentSubConnection};
 
@@ -89,8 +93,10 @@ impl<
         loop {
             let (stream, remote) = self.tcp_listener.accept().await?;
             log::info!("[AgentTcpListener] new conn from {}", remote);
+            let started = Instant::now();
             match self.process_incoming_stream(stream).await {
                 Ok(connection) => {
+                    histogram!(METRICS_AGENT_HISTOGRAM, "accept" => latency_to_label(started));
                     log::info!("new connection {}", connection.domain());
                     return Ok(connection);
                 }
