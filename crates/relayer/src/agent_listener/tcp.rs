@@ -16,7 +16,7 @@ use metrics::histogram;
 use protocol::key::ClusterValidator;
 use serde::de::DeserializeOwned;
 
-use crate::{utils::latency_to_label, METRICS_AGENT_HISTOGRAM};
+use crate::METRICS_AGENT_HISTOGRAM;
 
 use super::{AgentConnection, AgentListener, AgentSubConnection};
 
@@ -96,7 +96,8 @@ impl<
             let started = Instant::now();
             match self.process_incoming_stream(stream).await {
                 Ok(connection) => {
-                    histogram!(METRICS_AGENT_HISTOGRAM, "accept" => latency_to_label(started));
+                    histogram!(METRICS_AGENT_HISTOGRAM)
+                        .record(started.elapsed().as_millis() as f32);
                     log::info!("new connection {}", connection.domain());
                     return Ok(connection);
                 }

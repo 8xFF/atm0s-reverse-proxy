@@ -9,7 +9,7 @@ use crate::{
         cluster::{make_quinn_client, AliasSdk, VirtualUdpSocket},
         ProxyTunnel,
     },
-    utils::{home_id_from_domain, latency_to_label},
+    utils::home_id_from_domain,
     AgentStore, METRICS_PROXY_CLUSTER_COUNT, METRICS_PROXY_CLUSTER_ERROR_COUNT,
     METRICS_PROXY_HTTP_COUNT, METRICS_PROXY_HTTP_ERROR_COUNT, METRICS_PROXY_HTTP_LIVE,
     METRICS_TUNNEL_CLUSTER_COUNT, METRICS_TUNNEL_CLUSTER_ERROR_COUNT,
@@ -122,7 +122,7 @@ async fn tunnel_over_cluster<'a>(
     let (mut send, mut recv) = connection.open_bi().await?;
     log::info!("opened bi stream to agent for domain: {domain} in node {dest}");
 
-    histogram!(METRICS_TUNNEL_CLUSTER_HISTOGRAM, "init_ms" => latency_to_label(started));
+    histogram!(METRICS_TUNNEL_CLUSTER_HISTOGRAM).record(started.elapsed().as_millis() as f32);
 
     let req_buf: Vec<u8> = (&ClusterTunnelRequest {
         domain: domain.clone(),
