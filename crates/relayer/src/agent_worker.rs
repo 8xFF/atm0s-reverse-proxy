@@ -15,7 +15,6 @@ enum IncommingConn<
 use crate::{
     agent_listener::{AgentConnection, AgentConnectionHandler, AgentSubConnection},
     proxy_listener::ProxyTunnel,
-    utils::latency_to_label,
     METRICS_PROXY_AGENT_COUNT, METRICS_PROXY_AGENT_ERROR_COUNT, METRICS_PROXY_AGENT_LIVE,
     METRICS_PROXY_CLUSTER_LIVE, METRICS_PROXY_HTTP_LIVE, METRICS_TUNNEL_AGENT_COUNT,
     METRICS_TUNNEL_AGENT_ERROR_COUNT, METRICS_TUNNEL_AGENT_HISTOGRAM, METRICS_TUNNEL_AGENT_LIVE,
@@ -64,7 +63,7 @@ where
         counter!(METRICS_TUNNEL_AGENT_COUNT).increment(1);
         let started = Instant::now();
         let sub_connection = self.connection.create_sub_connection().await?;
-        histogram!(METRICS_TUNNEL_AGENT_HISTOGRAM, "init_ms" => latency_to_label(started));
+        histogram!(METRICS_TUNNEL_AGENT_HISTOGRAM).record(started.elapsed().as_millis() as f32);
 
         async_std::task::spawn(async move {
             if conn.local() {
