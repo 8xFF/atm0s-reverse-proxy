@@ -63,7 +63,8 @@ where
         counter!(METRICS_TUNNEL_AGENT_COUNT).increment(1);
         let started = Instant::now();
         let sub_connection = self.connection.create_sub_connection().await?;
-        histogram!(METRICS_TUNNEL_AGENT_HISTOGRAM).record(started.elapsed().as_millis() as f32);
+        histogram!(METRICS_TUNNEL_AGENT_HISTOGRAM)
+            .record(started.elapsed().as_millis() as f32 / 1000.0);
 
         async_std::task::spawn(async move {
             if conn.local() {

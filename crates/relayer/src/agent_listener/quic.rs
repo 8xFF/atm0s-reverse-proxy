@@ -59,7 +59,7 @@ impl<REQ: DeserializeOwned + Debug> AgentQuicListener<REQ> {
                     match Self::process_incoming_conn(cluster_validator, conn).await {
                         Ok(connection) => {
                             histogram!(METRICS_AGENT_HISTOGRAM)
-                                .record(started.elapsed().as_millis() as f32);
+                                .record(started.elapsed().as_millis() as f32 / 1000.0);
                             log::info!("new connection {}", connection.domain());
                             if let Err(e) = tx.send(connection).await {
                                 log::error!("send new connection to main loop error {:?}", e);
