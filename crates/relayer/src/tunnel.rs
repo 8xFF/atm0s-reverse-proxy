@@ -122,7 +122,8 @@ async fn tunnel_over_cluster<'a>(
     let (mut send, mut recv) = connection.open_bi().await?;
     log::info!("opened bi stream to agent for domain: {domain} in node {dest}");
 
-    histogram!(METRICS_TUNNEL_CLUSTER_HISTOGRAM).record(started.elapsed().as_millis() as f32);
+    histogram!(METRICS_TUNNEL_CLUSTER_HISTOGRAM)
+        .record(started.elapsed().as_millis() as f32 / 1000.0);
 
     let req_buf: Vec<u8> = (&ClusterTunnelRequest {
         domain: domain.clone(),
