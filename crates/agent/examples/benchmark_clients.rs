@@ -1,10 +1,12 @@
 use std::{
     net::SocketAddr,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
 use atm0s_reverse_proxy_agent::{
-    run_tunnel_connection, Connection, Protocol, QuicConnection, SubConnection, TcpConnection,
+    run_tunnel_connection, Connection, Protocol, QuicConnection, ServiceRegistry,
+    SimpleServiceRegistry, SubConnection, TcpConnection,
 };
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 use clap::Parser;
@@ -67,10 +69,14 @@ async fn main() {
         .with(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
+    let registry = SimpleServiceRegistry::new(args.http_dest, args.https_dest);
+    let registry = Arc::new(registry);
+
     for client in 0..args.clients {
-        let args2 = args.clone();
+        let args_c = args.clone();
+        let registry = registry.clone();
         async_std::task::spawn(async move {
-            async_std::task::spawn_local(connect(client, args2));
+            async_std::task::spawn_local(connect(client, args_c, registry));
         });
         async_std::task::sleep(Duration::from_millis(args.connect_wait_ms)).await;
     }
@@ -80,7 +86,7 @@ async fn main() {
     }
 }
 
-async fn connect(client: usize, args: Args) {
+async fn connect(client: usize, args: Args, registry: Arc<dyn ServiceRegistry>) {
     let default_tunnel_cert_buf = include_bytes!("../../../certs/tunnel.cert");
     let default_tunnel_cert = CertificateDer::from(default_tunnel_cert_buf.to_vec());
 
@@ -112,7 +118,7 @@ async fn connect(client: usize, args: Args) {
                             conn.response()
                         );
                         println!("{client} connected after {:?}", started.elapsed());
-                        run_connection_loop(conn, args.http_dest, args.https_dest).await;
+                        run_connection_loop(conn, registry.clone()).await;
                     }
                     Err(e) => {
                         log::error!("Connect to connector via tcp error: {}", e);
@@ -134,7 +140,7 @@ async fn connect(client: usize, args: Args) {
                             conn.response()
                         );
                         println!("{client} connected after {:?}", started.elapsed());
-                        run_connection_loop(conn, args.http_dest, args.https_dest).await;
+                        run_connection_loop(conn, registry.clone()).await;
                     }
                     Err(e) => {
                         log::error!("Connect to connector via quic error: {}", e);
@@ -149,8 +155,7 @@ async fn connect(client: usize, args: Args) {
 
 async fn run_connection_loop<S, R, W>(
     mut connection: impl Connection<S, R, W>,
-    http_dest: SocketAddr,
-    https_dest: SocketAddr,
+    registry: Arc<dyn ServiceRegistry>,
 ) where
     S: SubConnection<R, W> + 'static,
     R: AsyncRead + Send + Unpin + 'static,
@@ -160,11 +165,8 @@ async fn run_connection_loop<S, R, W>(
         match connection.recv().await {
             Ok(sub_connection) => {
                 log::info!("recv sub_connection");
-                async_std::task::spawn_local(run_tunnel_connection(
-                    sub_connection,
-                    http_dest,
-                    https_dest,
-                ));
+                let registry = registry.clone();
+                async_std::task::spawn_local(run_tunnel_connection(sub_connection, registry));
             }
             Err(e) => {
                 log::error!("recv sub_connection error: {}", e);

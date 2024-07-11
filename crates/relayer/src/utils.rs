@@ -1,7 +1,6 @@
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
-    time::Instant,
 };
 
 /// get home id from domain by get first subdomain

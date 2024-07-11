@@ -62,10 +62,11 @@ pub use proxy_listener::cluster::{
 pub use quinn;
 
 pub use proxy_listener::cluster::{run_sdn, ProxyClusterListener, ProxyClusterTunnel};
-pub use proxy_listener::http::{ProxyHttpListener, ProxyHttpTunnel};
+pub use proxy_listener::tcp::{ProxyTcpListener, ProxyTcpTunnel};
 pub use proxy_listener::{ProxyListener, ProxyTunnel};
 
 pub use agent_store::AgentStore;
+pub use proxy_listener::tcp::{HttpDomainDetector, RtspDomainDetector, TlsDomainDetector};
 pub use tunnel::{tunnel_task, TunnelContext};
 
 pub async fn run_agent_connection<AG, S, R, W>(
