@@ -1,5 +1,3 @@
-#[cfg(feature = "expose-metrics")]
-use poem::{listener::TcpListener, middleware::Tracing, EndpointExt as _, Route, Server};
 use std::sync::Arc;
 
 use futures::{AsyncRead, AsyncWrite};
