@@ -27,7 +27,7 @@ If you find it interesting or believe it could be helpful, we welcome your contr
 
 ## Performance
 
-Bellow is benchmarking results with Mac M1, and all nodes is running localy, it it very early version so it can be improve after finish all features:
+Bellow is benchmarking results with Mac M1, and all nodes is running locally, it it very early version so it can be improve after finish all features:
 
 - Direct http
 

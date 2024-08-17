@@ -32,10 +32,10 @@ impl<'a> TunnelContext<'a> {
     }
 }
 
-pub async fn tunnel_task<'a>(
+pub async fn tunnel_task(
     mut proxy_tunnel: Box<dyn ProxyTunnel>,
     agents: AgentStore,
-    context: TunnelContext<'a>,
+    context: TunnelContext<'_>,
 ) {
     if context.is_local() {
         counter!(METRICS_PROXY_HTTP_COUNT).increment(1);

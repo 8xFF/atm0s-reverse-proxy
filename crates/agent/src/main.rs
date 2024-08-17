@@ -66,7 +66,7 @@ async fn main() {
     let server_certs = if let Some(cert) = args.custom_quic_cert_base64 {
         vec![CertificateDer::from(
             URL_SAFE
-                .decode(&cert)
+                .decode(cert)
                 .expect("Custom cert should in base64 format")
                 .to_vec(),
         )]

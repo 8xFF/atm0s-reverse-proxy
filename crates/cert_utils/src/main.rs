@@ -21,12 +21,12 @@ fn main() {
         .as_millis();
     std::fs::write(
         format!("./certificate-{}.cert", since_the_epoch),
-        cert.cert.der().to_vec(),
+        cert.cert.der(),
     )
     .unwrap();
     std::fs::write(
         format!("./certificate-{}.key", since_the_epoch),
-        cert.key_pair.serialize_der().to_vec(),
+        cert.key_pair.serialize_der(),
     )
     .unwrap();
 }

@@ -1,7 +1,3 @@
-#[cfg(feature = "expose-metrics")]
-use metrics_dashboard::build_dashboard_route;
-#[cfg(feature = "expose-metrics")]
-use poem::{listener::TcpListener, middleware::Tracing, EndpointExt as _, Route, Server};
 use std::sync::Arc;
 
 use futures::{AsyncRead, AsyncWrite};
@@ -14,18 +10,18 @@ pub const METRICS_AGENT_LIVE: &str = "atm0s_agent_live";
 pub const METRICS_AGENT_HISTOGRAM: &str = "atm0s_agent_histogram";
 pub const METRICS_AGENT_COUNT: &str = "atm0s_agent_count";
 
-// this is for proxy from agent counting (incomming)
+// this is for proxy from agent counting (incoming)
 pub const METRICS_PROXY_AGENT_LIVE: &str = "atm0s_proxy_agent_live";
 pub const METRICS_PROXY_AGENT_COUNT: &str = "atm0s_proxy_agent_count";
 pub const METRICS_PROXY_AGENT_HISTOGRAM: &str = "atm0s_proxy_agent_histogram";
 pub const METRICS_PROXY_AGENT_ERROR_COUNT: &str = "atm0s_proxy_agent_error_count";
 
-// this is for http proxy counting (incomming)
+// this is for http proxy counting (incoming)
 pub const METRICS_PROXY_HTTP_LIVE: &str = "atm0s_proxy_http_live";
 pub const METRICS_PROXY_HTTP_COUNT: &str = "atm0s_proxy_http_count";
 pub const METRICS_PROXY_HTTP_ERROR_COUNT: &str = "atm0s_proxy_http_error_count";
 
-// this is for cluster proxy (incomming)
+// this is for cluster proxy (incoming)
 pub const METRICS_PROXY_CLUSTER_LIVE: &str = "atm0s_proxy_cluster_live";
 pub const METRICS_PROXY_CLUSTER_COUNT: &str = "atm0s_proxy_cluster_count";
 pub const METRICS_PROXY_CLUSTER_ERROR_COUNT: &str = "atm0s_proxy_cluster_error_count";
@@ -52,7 +48,7 @@ mod utils;
 pub use agent_listener::quic::{AgentQuicConnection, AgentQuicListener, AgentQuicSubConnection};
 pub use agent_listener::tcp::{AgentTcpConnection, AgentTcpListener, AgentTcpSubConnection};
 pub use agent_listener::{
-    AgentConnection, AgentConnectionHandler, AgentIncommingConnHandlerDummy, AgentListener,
+    AgentConnection, AgentConnectionHandler, AgentIncomingConnHandlerDummy, AgentListener,
     AgentSubConnection,
 };
 pub use atm0s_sdn;
@@ -86,8 +82,8 @@ pub async fn run_agent_connection<AG, S, R, W>(
     let (mut agent_worker, proxy_tunnel_tx) =
         agent_worker::AgentWorker::<AG, S, R, W>::new(agent_connection, agent_rpc_handler);
     let home_id = home_id_from_domain(&domain);
-    agents.add(home_id.clone(), proxy_tunnel_tx);
-    node_alias_sdk.register_alias(home_id.clone()).await;
+    agents.add(home_id, proxy_tunnel_tx);
+    node_alias_sdk.register_alias(home_id).await;
     let agents = agents.clone();
     gauge!(METRICS_AGENT_LIVE).increment(1.0);
     log::info!("agent_worker run for domain: {}", domain);

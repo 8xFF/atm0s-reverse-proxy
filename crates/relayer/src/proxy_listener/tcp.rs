@@ -85,7 +85,7 @@ impl ProxyTunnel for ProxyTcpTunnel {
         self.domain = self.detector.get_domain(&first_pkt[..first_pkt_size])?;
         log::info!("[PRoxyTcpTunnel] detected domain {}", self.domain);
         self.handshake = (&AgentTunnelRequest {
-            service: self.service.clone(),
+            service: self.service,
             tls: self.tls,
             domain: self.domain.clone(),
         })

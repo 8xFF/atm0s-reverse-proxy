@@ -2,27 +2,30 @@
 name = "atm0s-reverse-proxy-relayer"
 version = "0.1.0"
 edition = "2021"
+description = "Server for atm0s-reverse proxy cluster"
+license = "MIT"
 
 [dependencies]
-async-std = { version = "1.12.0", features = ["default", "attributes", "unstable", "tokio1"] }
-async-trait = "0.1.74"
-clap = { version = "4.4.11", features = ["derive", "env"], optional = true }
-futures = "0.3.4"
-httparse = "1.8.0"
-log = "0.4.20"
-tls-parser = "0.11.0"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter", "std"] }
-yamux = "0.13.1"
-protocol = { path = "../protocol", package = "atm0s-reverse-proxy-protocol"}
+protocol = { path = "../protocol", package = "atm0s-reverse-proxy-protocol" }
 protocol-ed25519 = { path = "../protocol_ed25519", package = "atm0s-reverse-proxy-protocol-ed25519", optional = true }
-serde = { version = "1.0.193", features = ["derive"] }
-metrics-dashboard = { version = "0.2.1", features = ["system"], optional = true }
-poem = { version = "2.0.0", optional = true }
-metrics = { version = "0.22.0" }
-quinn = { version = "0.11", features = ["ring", "runtime-async-std", "futures-io"] }
-rustls = { version = "0.23", features = ["ring", "std"] }
-atm0s-sdn = { git = "https://github.com/8xFF/atm0s-sdn.git", rev = "e5acc4458f8ce9bd0d9286bb3ad68a2a21fffb11" }
-rtsp-types = "0.1.2"
+async-std = { version = "1.12.0", features = ["default", "attributes", "unstable", "tokio1"] }
+async-trait = { workspace = true }
+clap = { workspace = true, features = ["derive", "env"], optional = true }
+futures = { workspace = true }
+httparse = { workspace = true }
+log = { workspace = true }
+tls-parser = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "std"] }
+yamux = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+metrics-dashboard = { workspace = true, features = ["system"], optional = true }
+poem = { workspace = true, optional = true }
+metrics = { workspace = true }
+quinn = { workspace = true, features = ["ring", "runtime-async-std", "futures-io"] }
+rustls = { workspace = true, features = ["ring", "std"] }
+atm0s-sdn = { workspace = true }
+rtsp-types = { workspace = true }
+local-ip-address = { workspace = true }
 
 [features]
 default = ["binary"]

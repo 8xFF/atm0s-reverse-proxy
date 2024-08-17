@@ -7,18 +7,13 @@ use async_std::channel::Sender;
 
 use crate::ProxyTunnel;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct AgentStore {
+    #[allow(clippy::type_complexity)]
     agents: Arc<RwLock<HashMap<u64, Sender<Box<dyn ProxyTunnel>>>>>,
 }
 
 impl AgentStore {
-    pub fn new() -> Self {
-        Self {
-            agents: Arc::new(RwLock::new(HashMap::new())),
-        }
-    }
-
     pub fn add(&self, id: u64, tx: Sender<Box<dyn ProxyTunnel>>) {
         self.agents
             .write()

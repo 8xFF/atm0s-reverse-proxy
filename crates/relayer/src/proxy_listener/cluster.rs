@@ -1,16 +1,14 @@
-use std::{sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use atm0s_sdn::{
-    builder::SdnBuilder,
     features::{
         alias::{self, FoundLocation},
         socket, FeaturesControl, FeaturesEvent,
     },
-    sans_io_runtime::{backend::PollingBackend, Owner},
+    sans_io_runtime::backend::PollingBackend,
     secure::StaticKeyAuthorization,
     services::visualization,
-    tasks::{SdnExtIn, SdnExtOut},
-    NodeAddr, NodeId, ServiceBroadcastLevel,
+    NodeAddr, NodeId, SdnBuilder, SdnExtIn, SdnExtOut, SdnOwner, ServiceBroadcastLevel,
 };
 use futures::{AsyncRead, AsyncWrite};
 use protocol::cluster::{ClusterTunnelRequest, ClusterTunnelResponse};
@@ -33,14 +31,16 @@ pub use quinn_utils::{make_quinn_client, make_quinn_server};
 pub use vnet::VirtualNetwork;
 pub use vsocket::VirtualUdpSocket;
 
-type SC = visualization::Control;
-type SE = visualization::Event;
+type UserData = ();
+type NodeInfo = ();
+type SC = visualization::Control<NodeInfo>;
+type SE = visualization::Event<NodeInfo>;
 type TC = ();
 type TW = ();
 
 pub async fn run_sdn(
     node_id: NodeId,
-    sdn_port: u16,
+    sdn_addrs: &[SocketAddr],
     secret_key: String,
     seeds: Vec<NodeAddr>,
     workers: usize,
@@ -55,11 +55,12 @@ pub async fn run_sdn(
         .await
         .expect("Should have 443 virtual port");
 
-    let mut builder = SdnBuilder::<SC, SE, TC, TW>::new(node_id, sdn_port, vec![]);
+    let mut builder =
+        SdnBuilder::<UserData, SC, SE, TC, TW, NodeInfo>::new(node_id, sdn_addrs, vec![]);
 
     builder.set_manual_discovery(vec!["tunnel".to_string()], vec!["tunnel".to_string()]);
     builder.set_visualization_collector(false);
-    builder.add_service(Arc::new(service::RelayServiceBuilder::default()));
+    builder.add_service(Arc::new(service::RelayServiceBuilder));
     builder.set_authorization(StaticKeyAuthorization::new(&secret_key));
 
     for seed in seeds {
@@ -67,7 +68,7 @@ pub async fn run_sdn(
     }
 
     async_std::task::spawn(async move {
-        let mut controller = builder.build::<PollingBackend<128, 128>>(workers);
+        let mut controller = builder.build::<PollingBackend<SdnOwner, 128, 128>>(workers, ());
         while controller.process().is_some() {
             while let Ok(c) = rx.try_recv() {
                 // log::info!("Command: {:?}", c);
@@ -75,10 +76,11 @@ pub async fn run_sdn(
                     OutEvent::Bind(port) => {
                         log::info!("Bind port: {}", port);
                         controller.send_to(
-                            Owner::worker(0),
-                            SdnExtIn::FeaturesControl(FeaturesControl::Socket(
-                                socket::Control::Bind(port),
-                            )),
+                            0,
+                            SdnExtIn::FeaturesControl(
+                                (),
+                                FeaturesControl::Socket(socket::Control::Bind(port)),
+                            ),
                         );
                     }
                     OutEvent::Pkt(pkt) => {
@@ -90,17 +92,18 @@ pub async fn run_sdn(
                             pkt.meta,
                         );
                         controller.send_to(
-                            Owner::worker(0),
-                            SdnExtIn::FeaturesControl(FeaturesControl::Socket(send)),
+                            0,
+                            SdnExtIn::FeaturesControl((), FeaturesControl::Socket(send)),
                         );
                     }
                     OutEvent::Unbind(port) => {
                         log::info!("Unbind port: {}", port);
                         controller.send_to(
-                            Owner::worker(0),
-                            SdnExtIn::FeaturesControl(FeaturesControl::Socket(
-                                socket::Control::Unbind(port),
-                            )),
+                            0,
+                            SdnExtIn::FeaturesControl(
+                                (),
+                                FeaturesControl::Socket(socket::Control::Unbind(port)),
+                            ),
                         );
                     }
                 }
@@ -120,19 +123,22 @@ pub async fn run_sdn(
                     AliasAsyncEvent::Unregister(alias) => alias::Control::Unregister { alias },
                 };
                 controller.send_to(
-                    Owner::worker(0),
-                    SdnExtIn::FeaturesControl(FeaturesControl::Alias(control)),
+                    0,
+                    SdnExtIn::FeaturesControl((), FeaturesControl::Alias(control)),
                 );
             }
             while let Some(event) = controller.pop_event() {
                 match event {
-                    SdnExtOut::FeaturesEvent(FeaturesEvent::Socket(socket::Event::RecvFrom(
-                        local_port,
-                        remote,
-                        remote_port,
-                        data,
-                        meta,
-                    ))) => {
+                    SdnExtOut::FeaturesEvent(
+                        _,
+                        FeaturesEvent::Socket(socket::Event::RecvFrom(
+                            local_port,
+                            remote,
+                            remote_port,
+                            data,
+                            meta,
+                        )),
+                    ) => {
                         if let Err(e) = tx.try_send(NetworkPkt {
                             local_port,
                             remote,
@@ -143,10 +149,10 @@ pub async fn run_sdn(
                             log::error!("Failed to send to tx: {:?}", e);
                         }
                     }
-                    SdnExtOut::FeaturesEvent(FeaturesEvent::Alias(alias::Event::QueryResult(
-                        alias,
-                        res,
-                    ))) => {
+                    SdnExtOut::FeaturesEvent(
+                        _,
+                        FeaturesEvent::Alias(alias::Event::QueryResult(alias, res)),
+                    ) => {
                         log::info!("FeaturesEvent::Alias: {alias} {:?}", res);
                         let res = res.map(|a| match a {
                             FoundLocation::Local => node_id,

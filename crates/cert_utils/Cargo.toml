@@ -1,11 +1,13 @@
 [package]
-name = "cert_utils"
+name = "atm0s-reverse-proxy-cert-utils"
 version = "0.1.0"
 edition = "2021"
+description = "Cert utils for atm0s-reverse proxy cluster"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rcgen = "0.13.1"
-rustls = "0.23.8"
-clap = { version = "4.4.11", features = ["derive", "env"] }
+rcgen = { workspace = true }
+rustls = { workspace = true }
+clap = { workspace = true, features = ["derive", "env"] }

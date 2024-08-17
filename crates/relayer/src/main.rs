@@ -1,5 +1,5 @@
 use atm0s_reverse_proxy_relayer::{
-    run_agent_connection, run_sdn, tunnel_task, AgentIncommingConnHandlerDummy, AgentListener,
+    run_agent_connection, run_sdn, tunnel_task, AgentIncomingConnHandlerDummy, AgentListener,
     AgentQuicListener, AgentStore, AgentTcpListener, HttpDomainDetector, ProxyListener,
     ProxyTcpListener, RtspDomainDetector, TlsDomainDetector, TunnelContext, METRICS_AGENT_COUNT,
     METRICS_AGENT_HISTOGRAM, METRICS_AGENT_LIVE, METRICS_PROXY_AGENT_COUNT,
@@ -146,7 +146,7 @@ async fn main() {
     )
     .await
     .expect("Should listen rtsps port");
-    let agents = AgentStore::new();
+    let agents = AgentStore::default();
 
     #[cfg(feature = "expose-metrics")]
     let app = Route::new()
@@ -167,7 +167,7 @@ async fn main() {
     );
     describe_counter!(METRICS_AGENT_COUNT, "Number of connected agents");
 
-    // this is for proxy from agent counting (incomming)
+    // this is for proxy from agent counting (incoming)
     describe_gauge!(
         METRICS_PROXY_AGENT_LIVE,
         "Live incoming proxy from agent to cluster"
@@ -185,7 +185,7 @@ async fn main() {
         "Number of incoming proxy error from agent to cluster"
     );
 
-    // this is for http proxy counting (incomming)
+    // this is for http proxy counting (incoming)
     describe_gauge!(METRICS_PROXY_HTTP_LIVE, "Live incoming http proxy");
     describe_counter!(METRICS_PROXY_HTTP_COUNT, "Number of incoming http proxy");
     describe_counter!(
@@ -193,7 +193,7 @@ async fn main() {
         "Number of incoming http proxy error"
     );
 
-    // this is for cluster proxy (incomming)
+    // this is for cluster proxy (incoming)
     describe_gauge!(METRICS_PROXY_CLUSTER_LIVE, "Live incoming cluster proxy");
     describe_counter!(
         METRICS_PROXY_CLUSTER_COUNT,
@@ -248,10 +248,22 @@ async fn main() {
             .run(app)
             .await;
     });
+    let sdn_addrs = local_ip_address::list_afinet_netifas()
+        .expect("Should have list interfaces")
+        .into_iter()
+        .filter(|(_, ip)| {
+            if ip.is_unspecified() || ip.is_multicast() {
+                false
+            } else {
+                std::net::UdpSocket::bind(SocketAddr::new(*ip, 0)).is_ok()
+            }
+        })
+        .map(|(_name, ip)| SocketAddr::new(ip, args.sdn_port))
+        .collect::<Vec<_>>();
 
     let (mut cluster_endpoint, alias_sdk, mut virtual_net) = run_sdn(
         args.sdn_node_id,
-        args.sdn_port,
+        &sdn_addrs,
         args.sdn_secret_key,
         args.sdn_seeds,
         args.sdn_workers,
@@ -260,8 +272,8 @@ async fn main() {
     )
     .await;
 
-    let agent_rpc_handler_quic = Arc::new(AgentIncommingConnHandlerDummy::default());
-    let agent_rpc_handler_tcp = Arc::new(AgentIncommingConnHandlerDummy::default());
+    let agent_rpc_handler_quic = Arc::new(AgentIncomingConnHandlerDummy::default());
+    let agent_rpc_handler_tcp = Arc::new(AgentIncomingConnHandlerDummy::default());
 
     loop {
         select! {
