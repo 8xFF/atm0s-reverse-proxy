@@ -21,7 +21,7 @@ allow = [
     "MIT",
     "Unicode-DFS-2016",
     "WTFPL",
-
+    "OpenSSL",
 ]
 confidence-threshold = 0.8
 exceptions = [
