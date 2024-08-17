@@ -120,6 +120,11 @@ async fn tunnel_over_cluster<'a>(
     let connection = connecting.await?;
     log::info!("connected to agent for domain: {domain} in node {dest}");
     let (mut send, mut recv) = connection.open_bi().await?;
+    if let Some(handshake) = proxy_tunnel.handshake() {
+        send.write_all(&(handshake.len() as u16).to_be_bytes())
+            .await?;
+        send.write_all(handshake).await?;
+    }
     log::info!("opened bi stream to agent for domain: {domain} in node {dest}");
 
     histogram!(METRICS_TUNNEL_CLUSTER_HISTOGRAM)

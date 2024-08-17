@@ -22,6 +22,7 @@ metrics = { version = "0.22.0" }
 quinn = { version = "0.11", features = ["ring", "runtime-async-std", "futures-io"] }
 rustls = { version = "0.23", features = ["ring", "std"] }
 atm0s-sdn = { git = "https://github.com/8xFF/atm0s-sdn.git", rev = "e5acc4458f8ce9bd0d9286bb3ad68a2a21fffb11" }
+rtsp-types = "0.1.2"
 
 [features]
 default = ["binary"]

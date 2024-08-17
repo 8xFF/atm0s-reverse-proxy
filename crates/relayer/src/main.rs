@@ -1,14 +1,14 @@
 use atm0s_reverse_proxy_relayer::{
     run_agent_connection, run_sdn, tunnel_task, AgentIncommingConnHandlerDummy, AgentListener,
-    AgentQuicListener, AgentStore, AgentTcpListener, ProxyHttpListener, ProxyListener,
-    TunnelContext, METRICS_AGENT_COUNT, METRICS_AGENT_HISTOGRAM, METRICS_AGENT_LIVE,
-    METRICS_PROXY_AGENT_COUNT, METRICS_PROXY_AGENT_ERROR_COUNT, METRICS_PROXY_AGENT_HISTOGRAM,
-    METRICS_PROXY_AGENT_LIVE, METRICS_PROXY_CLUSTER_COUNT, METRICS_PROXY_CLUSTER_ERROR_COUNT,
-    METRICS_PROXY_CLUSTER_LIVE, METRICS_PROXY_HTTP_COUNT, METRICS_PROXY_HTTP_ERROR_COUNT,
-    METRICS_PROXY_HTTP_LIVE, METRICS_TUNNEL_AGENT_COUNT, METRICS_TUNNEL_AGENT_ERROR_COUNT,
-    METRICS_TUNNEL_AGENT_HISTOGRAM, METRICS_TUNNEL_AGENT_LIVE, METRICS_TUNNEL_CLUSTER_COUNT,
-    METRICS_TUNNEL_CLUSTER_ERROR_COUNT, METRICS_TUNNEL_CLUSTER_HISTOGRAM,
-    METRICS_TUNNEL_CLUSTER_LIVE,
+    AgentQuicListener, AgentStore, AgentTcpListener, HttpDomainDetector, ProxyListener,
+    ProxyTcpListener, RtspDomainDetector, TlsDomainDetector, TunnelContext, METRICS_AGENT_COUNT,
+    METRICS_AGENT_HISTOGRAM, METRICS_AGENT_LIVE, METRICS_PROXY_AGENT_COUNT,
+    METRICS_PROXY_AGENT_ERROR_COUNT, METRICS_PROXY_AGENT_HISTOGRAM, METRICS_PROXY_AGENT_LIVE,
+    METRICS_PROXY_CLUSTER_COUNT, METRICS_PROXY_CLUSTER_ERROR_COUNT, METRICS_PROXY_CLUSTER_LIVE,
+    METRICS_PROXY_HTTP_COUNT, METRICS_PROXY_HTTP_ERROR_COUNT, METRICS_PROXY_HTTP_LIVE,
+    METRICS_TUNNEL_AGENT_COUNT, METRICS_TUNNEL_AGENT_ERROR_COUNT, METRICS_TUNNEL_AGENT_HISTOGRAM,
+    METRICS_TUNNEL_AGENT_LIVE, METRICS_TUNNEL_CLUSTER_COUNT, METRICS_TUNNEL_CLUSTER_ERROR_COUNT,
+    METRICS_TUNNEL_CLUSTER_HISTOGRAM, METRICS_TUNNEL_CLUSTER_LIVE,
 };
 use atm0s_sdn::{NodeAddr, NodeId};
 use clap::Parser;
@@ -16,6 +16,7 @@ use clap::Parser;
 use metrics_dashboard::{build_dashboard_route, DashboardOptions};
 #[cfg(feature = "expose-metrics")]
 use poem::{listener::TcpListener, middleware::Tracing, EndpointExt as _, Route, Server};
+use protocol::services::SERVICE_RTSP;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 #[cfg(feature = "expose-metrics")]
 use std::net::{Ipv4Addr, SocketAddrV4};
@@ -40,6 +41,14 @@ struct Args {
     /// Sni-https proxy port
     #[arg(env, long, default_value_t = 443)]
     https_port: u16,
+
+    /// Rtsp proxy port
+    #[arg(env, long, default_value_t = 554)]
+    rtsp_port: u16,
+
+    /// Sni-rtsp proxy port
+    #[arg(env, long, default_value_t = 5443)]
+    rtsps_port: u16,
 
     /// Number of times to greet
     #[arg(env, long, default_value = "0.0.0.0:33333")]
@@ -105,12 +114,38 @@ async fn main() {
     .await;
     let mut tcp_agent_listener =
         AgentTcpListener::new(args.connector_port, cluster_validator).await;
-    let mut proxy_http_listener = ProxyHttpListener::new(args.http_port, false)
-        .await
-        .expect("Should listen http port");
-    let mut proxy_tls_listener = ProxyHttpListener::new(args.https_port, true)
-        .await
-        .expect("Should listen tls port");
+    let mut proxy_http_listener = ProxyTcpListener::new(
+        args.http_port,
+        false,
+        None,
+        Arc::new(HttpDomainDetector::default()),
+    )
+    .await
+    .expect("Should listen http port");
+    let mut proxy_tls_listener = ProxyTcpListener::new(
+        args.https_port,
+        true,
+        None,
+        Arc::new(TlsDomainDetector::default()),
+    )
+    .await
+    .expect("Should listen tls port");
+    let mut proxy_rtsp_listener = ProxyTcpListener::new(
+        args.rtsp_port,
+        false,
+        Some(SERVICE_RTSP),
+        Arc::new(RtspDomainDetector::default()),
+    )
+    .await
+    .expect("Should listen rtsp port");
+    let mut proxy_rtsps_listener = ProxyTcpListener::new(
+        args.rtsps_port,
+        true,
+        Some(SERVICE_RTSP),
+        Arc::new(TlsDomainDetector::default()),
+    )
+    .await
+    .expect("Should listen rtsps port");
     let agents = AgentStore::new();
 
     #[cfg(feature = "expose-metrics")]
@@ -262,6 +297,32 @@ async fn main() {
                 }
             },
             e = proxy_tls_listener.recv().fuse() => match e {
+                Some(proxy_tunnel) => {
+                    if let Some(socket) = virtual_net.udp_socket(0).await {
+                        async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket, vec![default_cluster_cert.clone()])));
+                    } else {
+                        log::error!("Virtual Net create socket error");
+                    }
+                }
+                None => {
+                    log::error!("proxy_http_listener.recv()");
+                    exit(2);
+                }
+            },
+            e = proxy_rtsps_listener.recv().fuse() => match e {
+                Some(proxy_tunnel) => {
+                    if let Some(socket) = virtual_net.udp_socket(0).await {
+                        async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket, vec![default_cluster_cert.clone()])));
+                    } else {
+                        log::error!("Virtual Net create socket error");
+                    }
+                }
+                None => {
+                    log::error!("proxy_http_listener.recv()");
+                    exit(2);
+                }
+            },
+            e = proxy_rtsp_listener.recv().fuse() => match e {
                 Some(proxy_tunnel) => {
                     if let Some(socket) = virtual_net.udp_socket(0).await {
                         async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket, vec![default_cluster_cert.clone()])));

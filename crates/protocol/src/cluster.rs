@@ -37,3 +37,24 @@ impl TryFrom<&[u8]> for ClusterTunnelResponse {
         bincode::deserialize(buf)
     }
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AgentTunnelRequest {
+    pub service: Option<u16>,
+    pub tls: bool,
+    pub domain: String,
+}
+
+impl From<&AgentTunnelRequest> for Vec<u8> {
+    fn from(resp: &AgentTunnelRequest) -> Self {
+        bincode::serialize(resp).expect("Should ok")
+    }
+}
+
+impl TryFrom<&[u8]> for AgentTunnelRequest {
+    type Error = bincode::Error;
+
+    fn try_from(buf: &[u8]) -> Result<Self, Self::Error> {
+        bincode::deserialize(buf)
+    }
+}

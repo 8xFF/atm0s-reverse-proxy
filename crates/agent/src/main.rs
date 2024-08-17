@@ -1,11 +1,13 @@
-use std::{alloc::System, net::SocketAddr};
+use std::{alloc::System, net::SocketAddr, sync::Arc};
 
 use atm0s_reverse_proxy_agent::{
-    run_tunnel_connection, Connection, Protocol, QuicConnection, SubConnection, TcpConnection,
+    run_tunnel_connection, Connection, Protocol, QuicConnection, ServiceRegistry,
+    SimpleServiceRegistry, SubConnection, TcpConnection,
 };
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 use clap::Parser;
 use futures::{AsyncRead, AsyncWrite};
+use protocol::services::SERVICE_RTSP;
 use protocol_ed25519::AgentLocalKey;
 use rustls::pki_types::CertificateDer;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -33,6 +35,14 @@ struct Args {
     /// Sni-https proxy dest
     #[arg(env, long, default_value = "127.0.0.1:8443")]
     https_dest: SocketAddr,
+
+    /// Rtsp proxy dest
+    #[arg(env, long, default_value = "127.0.0.1:554")]
+    rtsp_dest: SocketAddr,
+
+    /// Sni-https proxy dest
+    #[arg(env, long, default_value = "127.0.0.1:5443")]
+    rtsps_dest: SocketAddr,
 
     /// Persistent local key
     #[arg(env, long, default_value = "local_key.pem")]
@@ -107,6 +117,11 @@ async fn main() {
         }
     };
 
+    let mut registry = SimpleServiceRegistry::new(args.http_dest, args.https_dest);
+    registry.set_tcp_service(SERVICE_RTSP, args.rtsp_dest);
+    registry.set_tls_service(SERVICE_RTSP, args.rtsps_dest);
+    let registry = Arc::new(registry);
+
     loop {
         log::info!(
             "Connecting to connector... {:?} addr: {}",
@@ -121,7 +136,7 @@ async fn main() {
                             "Connected to connector via tcp with res {:?}",
                             conn.response()
                         );
-                        run_connection_loop(conn, args.http_dest, args.https_dest).await;
+                        run_connection_loop(conn, registry.clone()).await;
                     }
                     Err(e) => {
                         log::error!("Connect to connector via tcp error: {}", e);
@@ -142,7 +157,7 @@ async fn main() {
                             "Connected to connector via quic with res {:?}",
                             conn.response()
                         );
-                        run_connection_loop(conn, args.http_dest, args.https_dest).await;
+                        run_connection_loop(conn, registry.clone()).await;
                     }
                     Err(e) => {
                         log::error!("Connect to connector via quic error: {}", e);
@@ -157,8 +172,7 @@ async fn main() {
 
 pub async fn run_connection_loop<S, R, W>(
     mut connection: impl Connection<S, R, W>,
-    http_dest: SocketAddr,
-    https_dest: SocketAddr,
+    registry: Arc<dyn ServiceRegistry>,
 ) where
     S: SubConnection<R, W> + 'static,
     R: AsyncRead + Send + Unpin + 'static,
@@ -168,11 +182,8 @@ pub async fn run_connection_loop<S, R, W>(
         match connection.recv().await {
             Ok(sub_connection) => {
                 log::info!("recv sub_connection");
-                async_std::task::spawn_local(run_tunnel_connection(
-                    sub_connection,
-                    http_dest,
-                    https_dest,
-                ));
+                let registry = registry.clone();
+                async_std::task::spawn_local(run_tunnel_connection(sub_connection, registry));
             }
             Err(e) => {
                 log::error!("recv sub_connection error: {}", e);

@@ -233,6 +233,9 @@ impl ProxyTunnel for ProxyClusterTunnel {
     fn domain(&self) -> &str {
         &self.domain
     }
+    fn handshake(&self) -> Option<&[u8]> {
+        None
+    }
     fn split(
         &mut self,
     ) -> (

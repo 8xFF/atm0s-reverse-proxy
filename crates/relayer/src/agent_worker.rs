@@ -1,6 +1,6 @@
 use std::{error::Error, marker::PhantomData, sync::Arc, time::Instant};
 
-use futures::{select, AsyncRead, AsyncWrite, FutureExt};
+use futures::{select, AsyncRead, AsyncWrite, AsyncWriteExt, FutureExt};
 use metrics::{counter, gauge, histogram};
 
 enum IncommingConn<
@@ -16,8 +16,9 @@ use crate::{
     agent_listener::{AgentConnection, AgentConnectionHandler, AgentSubConnection},
     proxy_listener::ProxyTunnel,
     METRICS_PROXY_AGENT_COUNT, METRICS_PROXY_AGENT_ERROR_COUNT, METRICS_PROXY_AGENT_LIVE,
-    METRICS_PROXY_CLUSTER_LIVE, METRICS_PROXY_HTTP_LIVE, METRICS_TUNNEL_AGENT_COUNT,
-    METRICS_TUNNEL_AGENT_ERROR_COUNT, METRICS_TUNNEL_AGENT_HISTOGRAM, METRICS_TUNNEL_AGENT_LIVE,
+    METRICS_PROXY_CLUSTER_ERROR_COUNT, METRICS_PROXY_CLUSTER_LIVE, METRICS_PROXY_HTTP_ERROR_COUNT,
+    METRICS_PROXY_HTTP_LIVE, METRICS_TUNNEL_AGENT_COUNT, METRICS_TUNNEL_AGENT_ERROR_COUNT,
+    METRICS_TUNNEL_AGENT_HISTOGRAM, METRICS_TUNNEL_AGENT_LIVE,
 };
 
 pub struct AgentWorker<AG, S, R, W>
@@ -63,19 +64,35 @@ where
         counter!(METRICS_TUNNEL_AGENT_COUNT).increment(1);
         let started = Instant::now();
         let sub_connection = self.connection.create_sub_connection().await?;
-        histogram!(METRICS_TUNNEL_AGENT_HISTOGRAM)
-            .record(started.elapsed().as_millis() as f32 / 1000.0);
 
         async_std::task::spawn(async move {
+            let domain = conn.domain().to_string();
+            let (mut reader1, mut writer1) = sub_connection.split();
+            if let Some(handshake) = conn.handshake() {
+                let err1 = writer1
+                    .write_all(&(handshake.len() as u16).to_be_bytes())
+                    .await;
+                let err2 = writer1.write_all(handshake).await;
+                if let Err(e) = err1.and(err2) {
+                    log::error!("handshake for domain {domain} failed {:?}", e);
+                    if conn.local() {
+                        gauge!(METRICS_PROXY_HTTP_ERROR_COUNT).increment(1.0);
+                    } else {
+                        gauge!(METRICS_PROXY_CLUSTER_ERROR_COUNT).increment(1.0);
+                    }
+                    return;
+                }
+            }
+            histogram!(METRICS_TUNNEL_AGENT_HISTOGRAM)
+                .record(started.elapsed().as_millis() as f32 / 1000.0);
+
             if conn.local() {
                 gauge!(METRICS_PROXY_HTTP_LIVE).increment(1.0);
             } else {
                 gauge!(METRICS_PROXY_CLUSTER_LIVE).increment(1.0);
             }
             gauge!(METRICS_TUNNEL_AGENT_LIVE).increment(1.0);
-            let domain = conn.domain().to_string();
-            log::info!("start proxy tunnel for domain {}", domain);
-            let (mut reader1, mut writer1) = sub_connection.split();
+            log::info!("start proxy tunnel for domain {domain}");
             let (mut reader2, mut writer2) = conn.split();
 
             let job1 = futures::io::copy(&mut reader1, &mut writer2);
