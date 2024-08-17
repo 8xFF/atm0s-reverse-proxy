@@ -267,7 +267,12 @@ async fn main() {
         select! {
             e = quic_agent_listener.recv().fuse() => match e {
                 Ok(agent_connection) => {
-                    run_agent_connection(agent_connection, agents.clone(), alias_sdk.clone(), agent_rpc_handler_quic.clone()).await;
+                    let agents1 = agents.clone();
+                    let alias_sdk1 = alias_sdk.clone();
+                    let agent_rpc_handler_quic1 = agent_rpc_handler_quic.clone();
+                    async_std::task::spawn(async move {
+                        run_agent_connection(agent_connection, agents1, alias_sdk1, agent_rpc_handler_quic1).await;
+                    });
                 }
                 Err(e) => {
                     log::error!("agent_listener error {}", e);
@@ -276,7 +281,12 @@ async fn main() {
             },
             e = tcp_agent_listener.recv().fuse() => match e {
                 Ok(agent_connection) => {
-                    run_agent_connection(agent_connection, agents.clone(), alias_sdk.clone(), agent_rpc_handler_tcp.clone()).await;
+                    let agents1 = agents.clone();
+                    let alias_sdk1 = alias_sdk.clone();
+                    let agent_rpc_handler_tcp1 = agent_rpc_handler_tcp.clone();
+                    async_std::task::spawn(async move {
+                        run_agent_connection(agent_connection, agents1, alias_sdk1, agent_rpc_handler_tcp1).await;
+                    });
                 }
                 Err(e) => {
                     log::error!("agent_listener error {}", e);
