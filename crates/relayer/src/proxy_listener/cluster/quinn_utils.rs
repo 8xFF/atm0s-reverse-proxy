@@ -29,7 +29,7 @@ pub fn make_quinn_client(
 ) -> Result<Endpoint, Box<dyn Error>> {
     let runtime = Arc::new(AsyncStdRuntime);
     let mut config = EndpointConfig::default();
-    //Note that client mtu size shoud be smaller than server's
+    //Note that client mtu size should be smaller than server's
     config
         .max_udp_payload_size(1400)
         .expect("Should config quinn client max_size to 1400");

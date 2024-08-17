@@ -3,7 +3,7 @@ use std::{error::Error, marker::PhantomData, sync::Arc, time::Instant};
 use futures::{select, AsyncRead, AsyncWrite, AsyncWriteExt, FutureExt};
 use metrics::{counter, gauge, histogram};
 
-enum IncommingConn<
+enum IncomingConn<
     S: AgentSubConnection<R, W>,
     R: AsyncRead + Send + Unpin,
     W: AsyncWrite + Send + Unpin,
@@ -139,18 +139,18 @@ where
 
     pub async fn run(&mut self) -> Result<(), Box<dyn Error>> {
         let incoming = select! {
-            conn = self.rx.recv().fuse() => IncommingConn::FromProxy(conn?),
-            conn = self.connection.recv().fuse() => IncommingConn::FromAgent(conn?, Default::default()),
+            conn = self.rx.recv().fuse() => IncomingConn::FromProxy(conn?),
+            conn = self.connection.recv().fuse() => IncomingConn::FromAgent(conn?, Default::default()),
         };
 
         match incoming {
-            IncommingConn::FromProxy(conn) => {
+            IncomingConn::FromProxy(conn) => {
                 if let Err(e) = self.handle_proxy_tunnel(conn).await {
                     log::error!("handle proxy tunnel error {:?}", e);
                     counter!(METRICS_TUNNEL_AGENT_ERROR_COUNT).increment(1);
                 }
             }
-            IncommingConn::FromAgent(conn, _) => {
+            IncomingConn::FromAgent(conn, _) => {
                 if let Err(e) = self.handle_agent_connection(conn).await {
                     log::error!("handle agent connection error {:?}", e);
                     counter!(METRICS_PROXY_AGENT_ERROR_COUNT).increment(1);

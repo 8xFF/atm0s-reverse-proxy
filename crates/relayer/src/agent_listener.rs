@@ -41,7 +41,7 @@ pub trait AgentConnectionHandler<
     async fn handle(&self, agent_domain: &str, connection: S) -> Result<(), Box<dyn Error>>;
 }
 
-pub struct AgentIncommingConnHandlerDummy<
+pub struct AgentIncomingConnHandlerDummy<
     S: AgentSubConnection<R, W>,
     R: AsyncRead + Send + Sync + Unpin,
     W: AsyncWrite + Send + Sync + Unpin,
@@ -53,7 +53,7 @@ impl<
         S: AgentSubConnection<R, W>,
         R: AsyncRead + Send + Sync + Unpin,
         W: AsyncWrite + Send + Sync + Unpin,
-    > Default for AgentIncommingConnHandlerDummy<S, R, W>
+    > Default for AgentIncomingConnHandlerDummy<S, R, W>
 {
     fn default() -> Self {
         Self {
@@ -67,7 +67,7 @@ impl<
         S: AgentSubConnection<R, W>,
         R: AsyncRead + Send + Sync + Unpin,
         W: AsyncWrite + Send + Sync + Unpin,
-    > AgentConnectionHandler<S, R, W> for AgentIncommingConnHandlerDummy<S, R, W>
+    > AgentConnectionHandler<S, R, W> for AgentIncomingConnHandlerDummy<S, R, W>
 {
     async fn handle(&self, agent_domain: &str, _connection: S) -> Result<(), Box<dyn Error>> {
         log::info!("on connection from agent {}", agent_domain);

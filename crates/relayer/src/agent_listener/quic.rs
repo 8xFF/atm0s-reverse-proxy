@@ -47,7 +47,7 @@ impl<REQ: DeserializeOwned + Debug> AgentQuicListener<REQ> {
                     let conn: quinn::Connection = match incoming_conn.await {
                         Ok(conn) => conn,
                         Err(e) => {
-                            log::error!("[AgentQuicListener] incomming conn error {}", e);
+                            log::error!("[AgentQuicListener] incoming conn error {}", e);
                             return;
                         }
                     };
@@ -88,7 +88,7 @@ impl<REQ: DeserializeOwned + Debug> AgentQuicListener<REQ> {
         let buf_len = recv
             .read(&mut buf)
             .await?
-            .ok_or::<Box<dyn Error>>("No incomming data".into())?;
+            .ok_or::<Box<dyn Error>>("No incoming data".into())?;
 
         match cluster_validator.validate_connect_req(&buf[..buf_len]) {
             Ok(request) => match cluster_validator.generate_domain(&request) {
