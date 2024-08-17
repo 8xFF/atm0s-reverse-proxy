@@ -1,6 +1,4 @@
 #[cfg(feature = "expose-metrics")]
-use metrics_dashboard::build_dashboard_route;
-#[cfg(feature = "expose-metrics")]
 use poem::{listener::TcpListener, middleware::Tracing, EndpointExt as _, Route, Server};
 use std::sync::Arc;
 
