@@ -17,8 +17,8 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "std"], optio
 yamux = { workspace = true }
 bincode = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-protocol = { path = "../protocol", package = "atm0s-reverse-proxy-protocol", version = "0.1.0" }
-protocol-ed25519 = { path = "../protocol_ed25519", package = "atm0s-reverse-proxy-protocol-ed25519", optional = true, version = "0.1.0" }
+protocol = { path = "../protocol", package = "atm0s-reverse-proxy-protocol", version = "0.1.1" }
+protocol-ed25519 = { path = "../protocol_ed25519", package = "atm0s-reverse-proxy-protocol-ed25519", optional = true, version = "0.1.1" }
 quinn = { workspace = true, features = ["ring", "runtime-async-std", "futures-io"] }
 rustls = { workspace = true, features = ["ring", "std"] }
 url = { workspace = true }
