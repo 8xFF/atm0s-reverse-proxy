@@ -8,5 +8,5 @@ pub fn home_id_from_domain(domain: &str) -> u64 {
     let mut parts = domain.split('.');
     let mut hasher = DefaultHasher::default();
     parts.next().unwrap_or(domain).hash(&mut hasher);
-    hasher.finish().into()
+    hasher.finish()
 }

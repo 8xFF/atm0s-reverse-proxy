@@ -146,7 +146,7 @@ async fn main() {
     )
     .await
     .expect("Should listen rtsps port");
-    let agents = AgentStore::new();
+    let agents = AgentStore::default();
 
     #[cfg(feature = "expose-metrics")]
     let app = Route::new()

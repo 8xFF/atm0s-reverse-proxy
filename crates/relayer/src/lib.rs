@@ -86,8 +86,8 @@ pub async fn run_agent_connection<AG, S, R, W>(
     let (mut agent_worker, proxy_tunnel_tx) =
         agent_worker::AgentWorker::<AG, S, R, W>::new(agent_connection, agent_rpc_handler);
     let home_id = home_id_from_domain(&domain);
-    agents.add(home_id.clone(), proxy_tunnel_tx);
-    node_alias_sdk.register_alias(home_id.clone()).await;
+    agents.add(home_id, proxy_tunnel_tx);
+    node_alias_sdk.register_alias(home_id).await;
     let agents = agents.clone();
     async_std::task::spawn(async move {
         gauge!(METRICS_AGENT_LIVE).increment(1.0);

@@ -169,7 +169,7 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
         match this.connection.poll_new_outbound(cx) {
-            Poll::Ready(stream) => return Poll::Ready(stream),
+            Poll::Ready(stream) => Poll::Ready(stream),
             Poll::Pending => Poll::Pending,
         }
     }

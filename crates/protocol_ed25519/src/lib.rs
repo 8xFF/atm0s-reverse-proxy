@@ -49,9 +49,8 @@ impl AgentLocalKey {
         let key = self
             .sign_key
             .to_pkcs8_pem(LineEnding::CRLF)
-            .ok()
             .expect("Should ok");
-        (&key).to_string()
+        key.to_string()
     }
 }
 
@@ -104,11 +103,11 @@ impl ClusterValidator<RegisterRequest> for ClusterValidatorImpl {
 
     fn sign_response_res(&self, m: &RegisterRequest, err: Option<String>) -> Vec<u8> {
         if let Some(err) = err {
-            return bincode::serialize(&RegisterResponse { response: Err(err) })
+            bincode::serialize(&RegisterResponse { response: Err(err) })
                 .expect("should serialize")
-                .to_vec();
+                .to_vec()
         } else {
-            return bincode::serialize(&RegisterResponse {
+            bincode::serialize(&RegisterResponse {
                 response: Ok(format!(
                     "{}.{}",
                     convert_hex(&m.pub_key.to_bytes()[0..16]),
@@ -116,7 +115,7 @@ impl ClusterValidator<RegisterRequest> for ClusterValidatorImpl {
                 )),
             })
             .expect("should serialize")
-            .to_vec();
+            .to_vec()
         }
     }
 }

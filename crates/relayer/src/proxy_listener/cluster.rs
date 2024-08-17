@@ -60,7 +60,7 @@ pub async fn run_sdn(
 
     builder.set_manual_discovery(vec!["tunnel".to_string()], vec!["tunnel".to_string()]);
     builder.set_visualization_collector(false);
-    builder.add_service(Arc::new(service::RelayServiceBuilder::default()));
+    builder.add_service(Arc::new(service::RelayServiceBuilder));
     builder.set_authorization(StaticKeyAuthorization::new(&secret_key));
 
     for seed in seeds {
@@ -88,7 +88,7 @@ pub async fn run_sdn(
                             pkt.local_port,
                             pkt.remote,
                             pkt.remote_port,
-                            pkt.data.into(),
+                            pkt.data,
                             pkt.meta,
                         );
                         controller.send_to(
