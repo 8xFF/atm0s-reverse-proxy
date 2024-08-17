@@ -88,23 +88,21 @@ pub async fn run_agent_connection<AG, S, R, W>(
     agents.add(home_id.clone(), proxy_tunnel_tx);
     node_alias_sdk.register_alias(home_id.clone()).await;
     let agents = agents.clone();
-    async_std::task::spawn(async move {
-        gauge!(METRICS_AGENT_LIVE).increment(1.0);
-        log::info!("agent_worker run for domain: {}", domain);
-        loop {
-            match agent_worker.run().await {
-                Ok(()) => {}
-                Err(e) => {
-                    log::error!("agent_worker error: {}", e);
-                    break;
-                }
+    gauge!(METRICS_AGENT_LIVE).increment(1.0);
+    log::info!("agent_worker run for domain: {}", domain);
+    loop {
+        match agent_worker.run().await {
+            Ok(()) => {}
+            Err(e) => {
+                log::error!("agent_worker error: {}", e);
+                break;
             }
         }
-        agents.remove(home_id);
-        node_alias_sdk
-            .unregister_alias(home_id_from_domain(&domain))
-            .await;
-        log::info!("agent_worker exit for domain: {}", domain);
-        gauge!(METRICS_AGENT_LIVE).decrement(1.0);
-    });
+    }
+    agents.remove(home_id);
+    node_alias_sdk
+        .unregister_alias(home_id_from_domain(&domain))
+        .await;
+    log::info!("agent_worker exit for domain: {}", domain);
+    gauge!(METRICS_AGENT_LIVE).decrement(1.0);
 }
