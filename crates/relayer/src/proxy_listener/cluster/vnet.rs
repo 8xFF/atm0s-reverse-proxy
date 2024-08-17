@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use async_std::channel::{Receiver, Sender};
-use atm0s_sdn::NodeId;
+use atm0s_sdn::{base::Buffer, NodeId};
 use futures::{select, FutureExt};
 
 use super::vsocket::VirtualUdpSocket;
@@ -18,7 +18,7 @@ pub struct NetworkPkt {
     pub local_port: u16,
     pub remote: NodeId,
     pub remote_port: u16,
-    pub data: Vec<u8>,
+    pub data: Buffer,
     pub meta: u8,
 }
 

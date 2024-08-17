@@ -248,10 +248,22 @@ async fn main() {
             .run(app)
             .await;
     });
+    let sdn_addrs = local_ip_address::list_afinet_netifas()
+        .expect("Should have list interfaces")
+        .into_iter()
+        .filter(|(_, ip)| {
+            if ip.is_unspecified() || ip.is_multicast() {
+                false
+            } else {
+                std::net::UdpSocket::bind(SocketAddr::new(*ip, 0)).is_ok()
+            }
+        })
+        .map(|(_name, ip)| SocketAddr::new(ip, args.sdn_port))
+        .collect::<Vec<_>>();
 
     let (mut cluster_endpoint, alias_sdk, mut virtual_net) = run_sdn(
         args.sdn_node_id,
-        args.sdn_port,
+        &sdn_addrs,
         args.sdn_secret_key,
         args.sdn_seeds,
         args.sdn_workers,
