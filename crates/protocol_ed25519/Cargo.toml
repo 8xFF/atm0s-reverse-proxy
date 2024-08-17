@@ -12,4 +12,4 @@ bincode = { workspace = true }
 ed25519-dalek = { workspace = true, features = ["rand_core", "serde", "pkcs8", "pem"] }
 rand = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-protocol = { path = "../protocol", package = "atm0s-reverse-proxy-protocol" }
+protocol = { path = "../protocol", package = "atm0s-reverse-proxy-protocol", version = "0.1.0" }
