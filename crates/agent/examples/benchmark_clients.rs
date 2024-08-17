@@ -11,6 +11,7 @@ use atm0s_reverse_proxy_agent::{
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 use clap::Parser;
 use futures::{AsyncRead, AsyncWrite};
+use protocol::DEFAULT_TUNNEL_CERT;
 use protocol_ed25519::AgentLocalKey;
 use rustls::pki_types::CertificateDer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -87,8 +88,7 @@ async fn main() {
 }
 
 async fn connect(client: usize, args: Args, registry: Arc<dyn ServiceRegistry>) {
-    let default_tunnel_cert_buf = include_bytes!("../../../certs/tunnel.cert");
-    let default_tunnel_cert = CertificateDer::from(default_tunnel_cert_buf.to_vec());
+    let default_tunnel_cert = CertificateDer::from(DEFAULT_TUNNEL_CERT.to_vec());
 
     let server_certs = if let Some(cert) = args.custom_quic_cert_base64 {
         vec![CertificateDer::from(

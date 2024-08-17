@@ -7,7 +7,7 @@ use atm0s_reverse_proxy_agent::{
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 use clap::Parser;
 use futures::{AsyncRead, AsyncWrite};
-use protocol::services::SERVICE_RTSP;
+use protocol::{services::SERVICE_RTSP, DEFAULT_TUNNEL_CERT};
 use protocol_ed25519::AgentLocalKey;
 use rustls::pki_types::CertificateDer;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -60,8 +60,6 @@ struct Args {
 #[async_std::main]
 async fn main() {
     let args = Args::parse();
-    let default_tunnel_cert_buf = include_bytes!("../../../certs/tunnel.cert");
-    let default_tunnel_cert = CertificateDer::from(default_tunnel_cert_buf.to_vec());
 
     let server_certs = if let Some(cert) = args.custom_quic_cert_base64 {
         vec![CertificateDer::from(
@@ -71,7 +69,7 @@ async fn main() {
                 .to_vec(),
         )]
     } else {
-        vec![default_tunnel_cert]
+        vec![CertificateDer::from(DEFAULT_TUNNEL_CERT.to_vec())]
     };
 
     rustls::crypto::ring::default_provider()

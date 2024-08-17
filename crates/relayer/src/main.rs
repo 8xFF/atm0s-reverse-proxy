@@ -16,7 +16,10 @@ use clap::Parser;
 use metrics_dashboard::{build_dashboard_route, DashboardOptions};
 #[cfg(feature = "expose-metrics")]
 use poem::{listener::TcpListener, middleware::Tracing, EndpointExt as _, Route, Server};
-use protocol::services::SERVICE_RTSP;
+use protocol::{
+    services::SERVICE_RTSP, DEFAULT_CLUSTER_CERT, DEFAULT_CLUSTER_KEY, DEFAULT_TUNNEL_CERT,
+    DEFAULT_TUNNEL_KEY,
+};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 #[cfg(feature = "expose-metrics")]
 use std::net::{Ipv4Addr, SocketAddrV4};
@@ -81,15 +84,11 @@ struct Args {
 
 #[async_std::main]
 async fn main() {
-    let default_tunnel_cert_buf = include_bytes!("../../../certs/tunnel.cert");
-    let default_tunnel_key_buf = include_bytes!("../../../certs/tunnel.key");
-    let default_tunnel_cert = CertificateDer::from(default_tunnel_cert_buf.to_vec());
-    let default_tunnel_key = PrivatePkcs8KeyDer::from(default_tunnel_key_buf.to_vec());
+    let default_tunnel_cert = CertificateDer::from(DEFAULT_TUNNEL_CERT.to_vec());
+    let default_tunnel_key = PrivatePkcs8KeyDer::from(DEFAULT_TUNNEL_KEY.to_vec());
 
-    let default_cluster_cert_buf = include_bytes!("../../../certs/cluster.cert");
-    let default_cluster_key_buf = include_bytes!("../../../certs/cluster.key");
-    let default_cluster_cert = CertificateDer::from(default_cluster_cert_buf.to_vec());
-    let default_cluster_key = PrivatePkcs8KeyDer::from(default_cluster_key_buf.to_vec());
+    let default_cluster_cert = CertificateDer::from(DEFAULT_CLUSTER_CERT.to_vec());
+    let default_cluster_key = PrivatePkcs8KeyDer::from(DEFAULT_CLUSTER_KEY.to_vec());
 
     rustls::crypto::ring::default_provider()
         .install_default()
