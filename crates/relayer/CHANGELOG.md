@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - histograms metrics to seconds ([#36](https://github.com/8xFF/atm0s-reverse-proxy/pull/36))
 - fixed histogram metrics not working ([#35](https://github.com/8xFF/atm0s-reverse-proxy/pull/35))
 - don't blocking proxy request from agent, refactor metrics ([#33](https://github.com/8xFF/atm0s-reverse-proxy/pull/33))
-- deadlock in agents map => move agents map to separted struct AgentStorage for avoiding block ([#32](https://github.com/8xFF/atm0s-reverse-proxy/pull/32))
+- deadlock in agents map => move agents map to separated struct AgentStorage for avoiding block ([#32](https://github.com/8xFF/atm0s-reverse-proxy/pull/32))
 - quic_listener will stuck if have huge of waiting incoming conns and cause timeout ([#31](https://github.com/8xFF/atm0s-reverse-proxy/pull/31))
 - increase agent quic keep alive for reduce server load, added benchmark clients sample ([#30](https://github.com/8xFF/atm0s-reverse-proxy/pull/30))
 - release action error ([#26](https://github.com/8xFF/atm0s-reverse-proxy/pull/26))
