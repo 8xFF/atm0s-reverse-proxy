@@ -48,6 +48,7 @@ type SE = visualization::Event<NodeInfo>;
 type TC = ();
 type TW = ();
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run_sdn(
     node_id: NodeId,
     sdn_addrs: &[SocketAddr],

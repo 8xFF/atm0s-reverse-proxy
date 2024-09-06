@@ -88,11 +88,9 @@ impl NetworkVisualize {
     }
 
     pub async fn pop_request(&mut self) -> Option<NetworkVisualizeEvent> {
-        loop {
-            match self.rx.recv().await {
-                Ok(event) => return Some(event),
-                Err(_) => return None,
-            }
+        match self.rx.recv().await {
+            Ok(event) => Some(event),
+            Err(_) => None,
         }
     }
 }
