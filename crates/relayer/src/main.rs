@@ -1,8 +1,8 @@
 use atm0s_reverse_proxy_relayer::{
     run_agent_connection, run_sdn, tunnel_task, AgentIncomingConnHandlerDummy, AgentListener,
-    AgentQuicListener, AgentStore, AgentTcpListener, HttpDomainDetector, ProxyListener,
-    ProxyTcpListener, RtspDomainDetector, TlsDomainDetector, TunnelContext, METRICS_AGENT_COUNT,
-    METRICS_AGENT_HISTOGRAM, METRICS_AGENT_LIVE, METRICS_PROXY_AGENT_COUNT,
+    AgentQuicListener, AgentStore, AgentTcpListener, HttpDomainDetector, NetworkVisualizeEvent,
+    ProxyListener, ProxyTcpListener, RtspDomainDetector, TlsDomainDetector, TunnelContext,
+    METRICS_AGENT_COUNT, METRICS_AGENT_HISTOGRAM, METRICS_AGENT_LIVE, METRICS_PROXY_AGENT_COUNT,
     METRICS_PROXY_AGENT_ERROR_COUNT, METRICS_PROXY_AGENT_HISTOGRAM, METRICS_PROXY_AGENT_LIVE,
     METRICS_PROXY_CLUSTER_COUNT, METRICS_PROXY_CLUSTER_ERROR_COUNT, METRICS_PROXY_CLUSTER_LIVE,
     METRICS_PROXY_HTTP_COUNT, METRICS_PROXY_HTTP_ERROR_COUNT, METRICS_PROXY_HTTP_LIVE,
@@ -80,6 +80,9 @@ struct Args {
     /// atm0s-sdn workers
     #[arg(env, long, default_value_t = 1)]
     sdn_workers: usize,
+
+    #[arg(env, long)]
+    sdn_visualize: bool,
 }
 
 #[async_std::main]
@@ -260,7 +263,7 @@ async fn main() {
         .map(|(_name, ip)| SocketAddr::new(ip, args.sdn_port))
         .collect::<Vec<_>>();
 
-    let (mut cluster_endpoint, alias_sdk, mut virtual_net) = run_sdn(
+    let (mut cluster_endpoint, alias_sdk, mut virtual_net, mut network_visualize) = run_sdn(
         args.sdn_node_id,
         &sdn_addrs,
         args.sdn_secret_key,
@@ -268,8 +271,27 @@ async fn main() {
         args.sdn_workers,
         default_cluster_key,
         default_cluster_cert.clone(),
+        args.sdn_visualize,
     )
     .await;
+
+    if args.sdn_visualize {
+        async_std::task::spawn(async move {
+            while let Some(e) = network_visualize.pop_request().await {
+                match e {
+                    NetworkVisualizeEvent::Snapshot(nodes) => {
+                        log::debug!("Snapshot: {:?}", nodes);
+                    }
+                    NetworkVisualizeEvent::NodeChanged(node_id, node_info, conns) => {
+                        log::debug!("NodeChanged: {:?} {:?} {:?}", node_id, node_info, conns);
+                    }
+                    NetworkVisualizeEvent::NodeRemoved(node_id) => {
+                        log::debug!("NodeRemoved: {:?}", node_id);
+                    }
+                }
+            }
+        });
+    }
 
     let agent_rpc_handler_quic = Arc::new(AgentIncomingConnHandlerDummy::default());
     let agent_rpc_handler_tcp = Arc::new(AgentIncomingConnHandlerDummy::default());
@@ -371,7 +393,7 @@ async fn main() {
                     log::error!("virtual_net.recv()");
                     exit(4);
                 }
-            }
+            },
         }
     }
 }

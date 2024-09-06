@@ -8,7 +8,8 @@ use atm0s_sdn::{
     sans_io_runtime::backend::PollingBackend,
     secure::StaticKeyAuthorization,
     services::visualization,
-    NodeAddr, NodeId, SdnBuilder, SdnExtIn, SdnExtOut, SdnOwner, ServiceBroadcastLevel,
+    NodeAddr, NodeId, SdnBuilder, SdnControllerUtils, SdnExtIn, SdnExtOut, SdnOwner,
+    ServiceBroadcastLevel,
 };
 use futures::{AsyncRead, AsyncWrite};
 use protocol::cluster::{ClusterTunnelRequest, ClusterTunnelResponse};
@@ -16,6 +17,8 @@ use quinn::{Endpoint, Incoming};
 
 use alias_async::AliasAsyncEvent;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
+use serde::{Deserialize, Serialize};
+use visualize::NetworkVisualize;
 use vnet::{NetworkPkt, OutEvent};
 
 use super::{ProxyListener, ProxyTunnel};
@@ -23,16 +26,23 @@ use super::{ProxyListener, ProxyTunnel};
 mod alias_async;
 mod quinn_utils;
 mod service;
+mod visualize;
 mod vnet;
 mod vsocket;
 
 pub use alias_async::AliasSdk;
 pub use quinn_utils::{make_quinn_client, make_quinn_server};
+pub use visualize::{ConnInfo, NetworkVisualizeEvent};
 pub use vnet::VirtualNetwork;
 pub use vsocket::VirtualUdpSocket;
 
 type UserData = ();
-type NodeInfo = ();
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeInfo {
+    uptime: u32,
+}
+
 type SC = visualization::Control<NodeInfo>;
 type SE = visualization::Event<NodeInfo>;
 type TC = ();
@@ -46,9 +56,16 @@ pub async fn run_sdn(
     workers: usize,
     priv_key: PrivatePkcs8KeyDer<'static>,
     cert: CertificateDer<'static>,
-) -> (ProxyClusterListener, AliasSdk, VirtualNetwork) {
+    visual_collector: bool,
+) -> (
+    ProxyClusterListener,
+    AliasSdk,
+    VirtualNetwork,
+    NetworkVisualize,
+) {
     let (mut vnet, tx, rx) = vnet::VirtualNetwork::new(node_id);
     let (mut alias_async, alias_sdk) = alias_async::AliasAsync::new();
+    let (network_visualize, visualize_sdk) = visualize::NetworkVisualize::new();
 
     let server_socket = vnet
         .udp_socket(443)
@@ -59,7 +76,7 @@ pub async fn run_sdn(
         SdnBuilder::<UserData, SC, SE, TC, TW, NodeInfo>::new(node_id, sdn_addrs, vec![]);
 
     builder.set_manual_discovery(vec!["tunnel".to_string()], vec!["tunnel".to_string()]);
-    builder.set_visualization_collector(false);
+    builder.set_visualization_collector(visual_collector);
     builder.add_service(Arc::new(service::RelayServiceBuilder));
     builder.set_authorization(StaticKeyAuthorization::new(&secret_key));
 
@@ -68,7 +85,17 @@ pub async fn run_sdn(
     }
 
     async_std::task::spawn(async move {
-        let mut controller = builder.build::<PollingBackend<SdnOwner, 128, 128>>(workers, ());
+        let node_info = NodeInfo { uptime: 0 };
+        let mut controller =
+            builder.build::<PollingBackend<SdnOwner, 128, 128>>(workers, node_info);
+        if visual_collector {
+            controller.service_control(
+                visualization::SERVICE_ID.into(),
+                (),
+                visualization::Control::Subscribe,
+            );
+        }
+
         while controller.process().is_some() {
             while let Ok(c) = rx.try_recv() {
                 // log::info!("Command: {:?}", c);
@@ -163,6 +190,17 @@ pub async fn run_sdn(
                         });
                         alias_async.push_response(alias, res);
                     }
+                    SdnExtOut::ServicesEvent(_service, (), event) => match event {
+                        visualization::Event::GotAll(all) => {
+                            visualize_sdk.snapshot(all).await;
+                        }
+                        visualization::Event::NodeChanged(node, info, changed) => {
+                            visualize_sdk.node_change((node, info, changed)).await;
+                        }
+                        visualization::Event::NodeRemoved(node) => {
+                            visualize_sdk.node_removed(node).await;
+                        }
+                    },
                     _ => {}
                 }
             }
@@ -174,6 +212,7 @@ pub async fn run_sdn(
         ProxyClusterListener::new(server_socket, priv_key, cert),
         alias_sdk,
         vnet,
+        network_visualize,
     )
 }
 

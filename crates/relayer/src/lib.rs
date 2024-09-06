@@ -58,6 +58,7 @@ pub use proxy_listener::cluster::{
 pub use quinn;
 
 pub use proxy_listener::cluster::{run_sdn, ProxyClusterListener, ProxyClusterTunnel};
+pub use proxy_listener::cluster::{ConnInfo, NetworkVisualizeEvent, NodeInfo};
 pub use proxy_listener::tcp::{ProxyTcpListener, ProxyTcpTunnel};
 pub use proxy_listener::{ProxyListener, ProxyTunnel};
 
