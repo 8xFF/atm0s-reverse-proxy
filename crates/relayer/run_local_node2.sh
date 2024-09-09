@@ -5,5 +5,8 @@ cargo run -- \
     --connector-port 0.0.0.0:13002 \
     --root-domain local.ha.8xff.io \
     --sdn-node-id 2 \
+    --sdn-ip 127.0.0.1 \
     --sdn-port 50002 \
+    --rtsp-port 5342 \
+    --rtsps-port 15342 \
     --sdn-seeds '1@/ip4/127.0.0.1/udp/50001'

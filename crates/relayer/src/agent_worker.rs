@@ -68,20 +68,19 @@ where
         async_std::task::spawn(async move {
             let domain = conn.domain().to_string();
             let (mut reader1, mut writer1) = sub_connection.split();
-            if let Some(handshake) = conn.handshake() {
-                let err1 = writer1
-                    .write_all(&(handshake.len() as u16).to_be_bytes())
-                    .await;
-                let err2 = writer1.write_all(handshake).await;
-                if let Err(e) = err1.and(err2) {
-                    log::error!("handshake for domain {domain} failed {:?}", e);
-                    if conn.local() {
-                        gauge!(METRICS_PROXY_HTTP_ERROR_COUNT).increment(1.0);
-                    } else {
-                        gauge!(METRICS_PROXY_CLUSTER_ERROR_COUNT).increment(1.0);
-                    }
-                    return;
+            let handshake = conn.handshake();
+            let err1 = writer1
+                .write_all(&(handshake.len() as u16).to_be_bytes())
+                .await;
+            let err2 = writer1.write_all(handshake).await;
+            if let Err(e) = err1.and(err2) {
+                log::error!("handshake for domain {domain} failed {:?}", e);
+                if conn.local() {
+                    gauge!(METRICS_PROXY_HTTP_ERROR_COUNT).increment(1.0);
+                } else {
+                    gauge!(METRICS_PROXY_CLUSTER_ERROR_COUNT).increment(1.0);
                 }
+                return;
             }
             histogram!(METRICS_TUNNEL_AGENT_HISTOGRAM)
                 .record(started.elapsed().as_millis() as f32 / 1000.0);
