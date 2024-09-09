@@ -23,7 +23,11 @@ use protocol::{
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 #[cfg(feature = "expose-metrics")]
 use std::net::{Ipv4Addr, SocketAddrV4};
-use std::{net::SocketAddr, process::exit, sync::Arc};
+use std::{
+    net::{IpAddr, SocketAddr},
+    process::exit,
+    sync::Arc,
+};
 
 use futures::{select, FutureExt};
 use metrics::{describe_counter, describe_gauge, describe_histogram};
@@ -65,9 +69,13 @@ struct Args {
     #[arg(env, long)]
     sdn_node_id: NodeId,
 
-    /// atm0s-sdn node-id
+    /// atm0s-sdn port
     #[arg(env, long, default_value_t = 0)]
     sdn_port: u16,
+
+    /// atm0s-sdn ip
+    #[arg(env, long)]
+    sdn_ip: Vec<IpAddr>,
 
     /// atm0s-sdn secret key
     #[arg(env, long, default_value = "insecure")]
@@ -247,18 +255,25 @@ async fn main() {
             .run(app)
             .await;
     });
-    let sdn_addrs = local_ip_address::list_afinet_netifas()
-        .expect("Should have list interfaces")
-        .into_iter()
-        .filter(|(_, ip)| {
-            if ip.is_unspecified() || ip.is_multicast() {
-                false
-            } else {
-                std::net::UdpSocket::bind(SocketAddr::new(*ip, 0)).is_ok()
-            }
-        })
-        .map(|(_name, ip)| SocketAddr::new(ip, args.sdn_port))
-        .collect::<Vec<_>>();
+    let sdn_addrs = if args.sdn_ip.is_empty() {
+        local_ip_address::list_afinet_netifas()
+            .expect("Should have list interfaces")
+            .into_iter()
+            .filter(|(_, ip)| {
+                if ip.is_unspecified() || ip.is_multicast() {
+                    false
+                } else {
+                    std::net::UdpSocket::bind(SocketAddr::new(*ip, 0)).is_ok()
+                }
+            })
+            .map(|(_name, ip)| SocketAddr::new(ip, args.sdn_port))
+            .collect::<Vec<_>>()
+    } else {
+        args.sdn_ip
+            .iter()
+            .map(|ip| SocketAddr::new(*ip, args.sdn_port))
+            .collect::<Vec<_>>()
+    };
 
     let (mut cluster_endpoint, alias_sdk, mut virtual_net) = run_sdn(
         args.sdn_node_id,

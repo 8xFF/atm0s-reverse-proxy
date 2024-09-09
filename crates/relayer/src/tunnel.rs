@@ -42,6 +42,10 @@ pub async fn tunnel_task(
     } else {
         counter!(METRICS_PROXY_CLUSTER_COUNT).increment(1);
     }
+    log::info!(
+        "proxy_tunnel.wait() for checking url from {}",
+        proxy_tunnel.source_addr()
+    );
     match proxy_tunnel.wait().timeout(Duration::from_secs(5)).await {
         Err(_) => {
             log::error!("proxy_tunnel.wait() for checking url timeout");
@@ -64,7 +68,10 @@ pub async fn tunnel_task(
         _ => {}
     }
 
-    log::info!("proxy_tunnel.domain(): {}", proxy_tunnel.domain());
+    log::info!(
+        "proxy_tunnel.wait() done and got domain {}",
+        proxy_tunnel.domain()
+    );
     let domain = proxy_tunnel.domain().to_string();
     let home_id = home_id_from_domain(&domain);
     if let Some(agent_tx) = agents.get(home_id) {
@@ -102,7 +109,7 @@ async fn tunnel_over_cluster<'a>(
 ) -> Result<(), Box<dyn Error>> {
     let started = Instant::now();
     log::warn!(
-        "agent not found for domain: {} in local => finding in cluster",
+        "[TunnerOverCluster] agent not found for domain: {} in local => finding in cluster",
         domain
     );
     let node_alias_id = home_id_from_domain(&domain);
@@ -110,28 +117,24 @@ async fn tunnel_over_cluster<'a>(
         .find_alias(node_alias_id)
         .await
         .ok_or("NODE_ALIAS_NOT_FOUND".to_string())?;
-    log::info!("found agent for domain: {domain} in node {dest}");
+    log::info!("[TunnerOverCluster]  found agent for domain: {domain} in node {dest}");
     let client = make_quinn_client(socket, server_certs)?;
-    log::info!("connecting to agent for domain: {domain} in node {dest}");
+    log::info!("[TunnerOverCluster] connecting to agent for domain: {domain} in node {dest}");
     let connecting = client.connect(
         SocketAddr::V4(SocketAddrV4::new(dest.into(), 443)),
         "cluster",
     )?;
     let connection = connecting.await?;
-    log::info!("connected to agent for domain: {domain} in node {dest}");
+    log::info!("[TunnerOverCluster]  connected to agent for domain: {domain} in node {dest}");
     let (mut send, mut recv) = connection.open_bi().await?;
-    if let Some(handshake) = proxy_tunnel.handshake() {
-        send.write_all(&(handshake.len() as u16).to_be_bytes())
-            .await?;
-        send.write_all(handshake).await?;
-    }
-    log::info!("opened bi stream to agent for domain: {domain} in node {dest}");
+    log::info!("[TunnerOverCluster] opened bi stream to agent for domain: {domain} in node {dest}");
 
     histogram!(METRICS_TUNNEL_CLUSTER_HISTOGRAM)
         .record(started.elapsed().as_millis() as f32 / 1000.0);
 
     let req_buf: Vec<u8> = (&ClusterTunnelRequest {
         domain: domain.clone(),
+        handshake: proxy_tunnel.handshake().to_vec(),
     })
         .into();
     send.write_all(&req_buf).await?;

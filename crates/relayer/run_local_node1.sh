@@ -5,4 +5,7 @@ cargo run -- \
     --connector-port 0.0.0.0:13001 \
     --root-domain local.ha.8xff.io \
     --sdn-node-id 1 \
-    --sdn-port 50001
+    --sdn-ip 127.0.0.1 \
+    --sdn-port 50001 \
+    --rtsp-port 5341 \
+    --rtsps-port 15341 \

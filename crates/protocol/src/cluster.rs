@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClusterTunnelRequest {
     pub domain: String,
+    pub handshake: Vec<u8>,
 }
 
 impl From<&ClusterTunnelRequest> for Vec<u8> {

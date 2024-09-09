@@ -8,7 +8,15 @@ use crate::proxy_listener::DomainDetector;
 pub struct TlsDomainDetector();
 
 impl DomainDetector for TlsDomainDetector {
+    fn name(&self) -> &str {
+        "tls"
+    }
+
     fn get_domain(&self, packet: &[u8]) -> Option<String> {
+        log::info!(
+            "[TlsDomainDetector] check domain for buffer {} bytes",
+            packet.len()
+        );
         let res = match parse_tls_plaintext(packet) {
             Ok(res) => res,
             Err(e) => {

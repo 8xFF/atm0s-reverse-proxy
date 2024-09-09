@@ -52,6 +52,7 @@ impl ProxyListener for ProxyTcpListener {
         let (stream, remote) = self.tcp_listener.accept().await.ok()?;
         log::info!("[ProxyTcpListener] new conn from {}", remote);
         Some(Box::new(ProxyTcpTunnel {
+            stream_addr: remote,
             detector: self.detector.clone(),
             service: self.service,
             domain: "".to_string(),
@@ -63,6 +64,7 @@ impl ProxyListener for ProxyTcpListener {
 }
 
 pub struct ProxyTcpTunnel {
+    stream_addr: SocketAddr,
     detector: Arc<dyn DomainDetector>,
     service: Option<u16>,
     domain: String,
@@ -73,6 +75,14 @@ pub struct ProxyTcpTunnel {
 
 #[async_trait::async_trait]
 impl ProxyTunnel for ProxyTcpTunnel {
+    fn source_addr(&self) -> String {
+        if self.tls {
+            format!("tls+{}://{}", self.detector.name(), self.stream_addr)
+        } else {
+            format!("tcp+{}://{}", self.detector.name(), self.stream_addr)
+        }
+    }
+
     async fn wait(&mut self) -> Option<()> {
         log::info!("[ProxyTcpTunnel] wait first data for checking url...");
         let mut first_pkt = [0u8; 4096];
@@ -83,7 +93,7 @@ impl ProxyTunnel for ProxyTcpTunnel {
             first_pkt_size
         );
         self.domain = self.detector.get_domain(&first_pkt[..first_pkt_size])?;
-        log::info!("[PRoxyTcpTunnel] detected domain {}", self.domain);
+        log::info!("[ProxyTcpTunnel] detected domain {}", self.domain);
         self.handshake = (&AgentTunnelRequest {
             service: self.service,
             tls: self.tls,
@@ -101,8 +111,8 @@ impl ProxyTunnel for ProxyTcpTunnel {
         &self.domain
     }
 
-    fn handshake(&self) -> Option<&[u8]> {
-        Some(&self.handshake)
+    fn handshake(&self) -> &[u8] {
+        &self.handshake
     }
 
     fn split(

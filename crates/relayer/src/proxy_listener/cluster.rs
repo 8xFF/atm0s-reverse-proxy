@@ -198,7 +198,9 @@ impl ProxyListener for ProxyClusterListener {
         let connecting = self.server.accept().await?;
         log::info!("incoming connection from {}", connecting.remote_address());
         Some(Box::new(ProxyClusterTunnel {
+            virtual_addr: connecting.remote_address(),
             domain: "".to_string(),
+            handshake: vec![],
             connecting: Some(connecting),
             streams: None,
         }))
@@ -206,7 +208,9 @@ impl ProxyListener for ProxyClusterListener {
 }
 
 pub struct ProxyClusterTunnel {
+    virtual_addr: SocketAddr,
     domain: String,
+    handshake: Vec<u8>,
     connecting: Option<Incoming>,
     streams: Option<(
         Box<dyn AsyncRead + Send + Sync + Unpin>,
@@ -216,20 +220,35 @@ pub struct ProxyClusterTunnel {
 
 #[async_trait::async_trait]
 impl ProxyTunnel for ProxyClusterTunnel {
+    fn source_addr(&self) -> String {
+        format!("sdn-quic://{}", self.virtual_addr)
+    }
+
     async fn wait(&mut self) -> Option<()> {
         let connecting = self.connecting.take()?;
         let connection = connecting.await.ok()?;
-        log::info!("incoming connection from: {}", connection.remote_address());
+        log::info!(
+            "[ProxyClusterTunnel] incoming connection from: {}",
+            connection.remote_address()
+        );
         let (mut send, mut recv) = connection.accept_bi().await.ok()?;
-        log::info!("accepted bi stream from: {}", connection.remote_address());
+        log::info!(
+            "[ProxyClusterTunnel] accepted bi stream from: {}",
+            connection.remote_address()
+        );
         let mut req_buf = [0; 1500];
         let req_size = recv.read(&mut req_buf).await.ok()??;
+        log::info!(
+            "[ProxyClusterTunnel] read {req_size} handhshake buffer from: {}",
+            connection.remote_address()
+        );
         let req = ClusterTunnelRequest::try_from(&req_buf[..req_size]).ok()?;
         let res_buf: Vec<u8> = (&ClusterTunnelResponse { success: true }).into();
         send.write_all(&res_buf).await.ok()?;
-        log::info!("ProxyClusterTunnel domain: {}", req.domain);
+        log::info!("[ProxyClusterTunnel] got domain: {}", req.domain);
 
         self.domain = req.domain;
+        self.handshake = req.handshake;
         self.streams = Some((Box::new(recv), Box::new(send)));
         Some(())
     }
@@ -239,8 +258,8 @@ impl ProxyTunnel for ProxyClusterTunnel {
     fn domain(&self) -> &str {
         &self.domain
     }
-    fn handshake(&self) -> Option<&[u8]> {
-        None
+    fn handshake(&self) -> &[u8] {
+        &self.handshake
     }
     fn split(
         &mut self,
