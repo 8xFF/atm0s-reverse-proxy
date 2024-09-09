@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-agent-v0.1.0...atm0s-reverse-proxy-agent-v0.1.1) - 2024-09-09
+
+### Other
+
+- updated the following local packages: atm0s-reverse-proxy-protocol
+
 ## [0.1.0](https://github.com/8xFF/atm0s-reverse-proxy/releases/tag/atm0s-reverse-proxy-agent-v0.1.0) - 2024-08-17
 
 ### Added

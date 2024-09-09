@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-relayer-v0.1.0...atm0s-reverse-proxy-relayer-v0.1.1) - 2024-09-09
+
+### Fixed
+
+- wrong handshake when tunnel request over cluster ([#48](https://github.com/8xFF/atm0s-reverse-proxy/pull/48))
+
+### Other
+
+- fix typo in CHANGELOG ([#45](https://github.com/8xFF/atm0s-reverse-proxy/pull/45))
+
 ## [0.1.0](https://github.com/8xFF/atm0s-reverse-proxy/releases/tag/atm0s-reverse-proxy-relayer-v0.1.0) - 2024-08-17
 
 ### Added
