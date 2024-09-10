@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-relayer-v0.1.1...atm0s-reverse-proxy-relayer-v0.1.2) - 2024-09-10
+
+### Fixed
+
+- add node_info struct to feedback status to sdn collector ([#52](https://github.com/8xFF/atm0s-reverse-proxy/pull/52))
+
 ## [0.1.1](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-relayer-v0.1.0...atm0s-reverse-proxy-relayer-v0.1.1) - 2024-09-09
 
 ### Fixed
