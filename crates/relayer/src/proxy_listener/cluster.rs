@@ -1,4 +1,8 @@
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use atm0s_sdn::{
     features::{
@@ -8,7 +12,8 @@ use atm0s_sdn::{
     sans_io_runtime::backend::PollingBackend,
     secure::StaticKeyAuthorization,
     services::visualization,
-    NodeAddr, NodeId, SdnBuilder, SdnExtIn, SdnExtOut, SdnOwner, ServiceBroadcastLevel,
+    NodeAddr, NodeId, SdnBuilder, SdnControllerUtils, SdnExtIn, SdnExtOut, SdnOwner,
+    ServiceBroadcastLevel,
 };
 use futures::{AsyncRead, AsyncWrite};
 use protocol::cluster::{ClusterTunnelRequest, ClusterTunnelResponse};
@@ -16,6 +21,7 @@ use quinn::{Endpoint, Incoming};
 
 use alias_async::AliasAsyncEvent;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
+use serde::{Deserialize, Serialize};
 use vnet::{NetworkPkt, OutEvent};
 
 use super::{ProxyListener, ProxyTunnel};
@@ -32,7 +38,10 @@ pub use vnet::VirtualNetwork;
 pub use vsocket::VirtualUdpSocket;
 
 type UserData = ();
-type NodeInfo = ();
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NodeInfo {
+    uptime: u32,
+}
 type SC = visualization::Control<NodeInfo>;
 type SE = visualization::Event<NodeInfo>;
 type TC = ();
@@ -68,8 +77,23 @@ pub async fn run_sdn(
     }
 
     async_std::task::spawn(async move {
-        let mut controller = builder.build::<PollingBackend<SdnOwner, 128, 128>>(workers, ());
+        let node_info = NodeInfo { uptime: 0 };
+        let started_at = Instant::now();
+        let mut count = 0;
+        let mut controller =
+            builder.build::<PollingBackend<SdnOwner, 128, 128>>(workers, node_info);
         while controller.process().is_some() {
+            if count % 500 == 0 {
+                //each 5 seconds
+                controller.service_control(
+                    visualization::SERVICE_ID.into(),
+                    (),
+                    visualization::Control::UpdateInfo(NodeInfo {
+                        uptime: started_at.elapsed().as_secs() as u32,
+                    }),
+                );
+                count = 0;
+            }
             while let Ok(c) = rx.try_recv() {
                 // log::info!("Command: {:?}", c);
                 match c {
@@ -167,6 +191,7 @@ pub async fn run_sdn(
                 }
             }
             async_std::task::sleep(Duration::from_millis(1)).await;
+            count += 1;
         }
     });
 
