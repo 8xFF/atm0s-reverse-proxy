@@ -16,6 +16,7 @@ pub trait AgentConnection<S: AgentSubConnection<R, W>, R: AsyncRead + Unpin, W: 
     Send + Sync
 {
     fn domain(&self) -> String;
+    fn conn_id(&self) -> u64;
     async fn create_sub_connection(&mut self) -> Result<S, Box<dyn Error>>;
     async fn recv(&mut self) -> Result<S, Box<dyn Error>>;
 }
