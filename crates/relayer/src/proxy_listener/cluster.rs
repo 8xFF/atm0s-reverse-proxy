@@ -16,7 +16,7 @@ use atm0s_sdn::{
     ServiceBroadcastLevel,
 };
 use futures::{AsyncRead, AsyncWrite};
-use protocol::cluster::{ClusterTunnelRequest, ClusterTunnelResponse};
+use protocol::cluster::{wait_object, write_object, ClusterTunnelRequest, ClusterTunnelResponse};
 use quinn::{Endpoint, Incoming};
 
 use alias_async::AliasAsyncEvent;
@@ -261,15 +261,12 @@ impl ProxyTunnel for ProxyClusterTunnel {
             "[ProxyClusterTunnel] accepted bi stream from: {}",
             connection.remote_address()
         );
-        let mut req_buf = [0; 1500];
-        let req_size = recv.read(&mut req_buf).await.ok()??;
-        log::info!(
-            "[ProxyClusterTunnel] read {req_size} handhshake buffer from: {}",
-            connection.remote_address()
-        );
-        let req = ClusterTunnelRequest::try_from(&req_buf[..req_size]).ok()?;
-        let res_buf: Vec<u8> = (&ClusterTunnelResponse { success: true }).into();
-        send.write_all(&res_buf).await.ok()?;
+        let req = wait_object::<_, ClusterTunnelRequest, 1000>(&mut recv)
+            .await
+            .ok()?;
+        write_object::<_, _, 1000>(&mut send, ClusterTunnelResponse { success: true })
+            .await
+            .ok()?;
         log::info!("[ProxyClusterTunnel] got domain: {}", req.domain);
 
         self.domain = req.domain;

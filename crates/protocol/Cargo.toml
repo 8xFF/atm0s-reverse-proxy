@@ -10,3 +10,4 @@ license = "MIT"
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
 bincode = { workspace = true }
+futures = { workspace = true }

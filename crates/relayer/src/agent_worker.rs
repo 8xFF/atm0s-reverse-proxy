@@ -97,17 +97,16 @@ where
             let job1 = futures::io::copy(&mut reader1, &mut writer2);
             let job2 = futures::io::copy(&mut reader2, &mut writer1);
 
-            select! {
-                e = job1.fuse() => {
-                    if let Err(e) = e {
-                        log::info!("agent => proxy error: {}", e);
-                    }
-                }
-                e = job2.fuse() => {
-                    if let Err(e) = e {
-                        log::info!("proxy => agent error: {}", e);
-                    }
-                }
+            let (res1, res2) = futures::join!(job1, job2);
+
+            match res1 {
+                Ok(len) => log::info!("proxy from client to server end with {} bytes", len),
+                Err(err) => log::error!("proxy from client to server error {err:?}"),
+            }
+
+            match res2 {
+                Ok(len) => log::info!("proxy from server to client end with {} bytes", len),
+                Err(err) => log::error!("proxy from server to client error {err:?}"),
             }
 
             log::info!("end proxy tunnel for domain {}", domain);

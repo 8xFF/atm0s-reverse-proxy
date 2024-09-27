@@ -92,6 +92,10 @@ impl ProxyTunnel for ProxyTcpTunnel {
             "[ProxyTcpTunnel] read {} bytes for determine url",
             first_pkt_size
         );
+        if first_pkt_size == 0 {
+            log::warn!("[ProxyTcpTunnel] connect close without data");
+            return None;
+        }
         self.domain = self.detector.get_domain(&first_pkt[..first_pkt_size])?;
         log::info!("[ProxyTcpTunnel] detected domain {}", self.domain);
         self.handshake = (&AgentTunnelRequest {

@@ -1,7 +1,7 @@
 use std::{
     error::Error,
     net::{SocketAddr, SocketAddrV4},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use crate::{
@@ -15,10 +15,8 @@ use crate::{
     METRICS_TUNNEL_CLUSTER_COUNT, METRICS_TUNNEL_CLUSTER_ERROR_COUNT,
     METRICS_TUNNEL_CLUSTER_HISTOGRAM, METRICS_TUNNEL_CLUSTER_LIVE,
 };
-use async_std::prelude::FutureExt;
-use futures::{select, FutureExt as _};
 use metrics::{counter, gauge, histogram};
-use protocol::cluster::{ClusterTunnelRequest, ClusterTunnelResponse};
+use protocol::cluster::{wait_object, write_object, ClusterTunnelRequest, ClusterTunnelResponse};
 use rustls::pki_types::CertificateDer;
 
 pub enum TunnelContext<'a> {
@@ -46,26 +44,14 @@ pub async fn tunnel_task(
         "proxy_tunnel.wait() for checking url from {}",
         proxy_tunnel.source_addr()
     );
-    match proxy_tunnel.wait().timeout(Duration::from_secs(5)).await {
-        Err(_) => {
-            log::error!("proxy_tunnel.wait() for checking url timeout");
-            if context.is_local() {
-                counter!(METRICS_PROXY_HTTP_ERROR_COUNT).increment(1);
-            } else {
-                counter!(METRICS_PROXY_CLUSTER_ERROR_COUNT).increment(1);
-            }
-            return;
+    if proxy_tunnel.wait().await.is_none() {
+        log::error!("proxy_tunnel.wait() for checking url invalid");
+        if context.is_local() {
+            counter!(METRICS_PROXY_HTTP_ERROR_COUNT).increment(1);
+        } else {
+            counter!(METRICS_PROXY_CLUSTER_ERROR_COUNT).increment(1);
         }
-        Ok(None) => {
-            log::error!("proxy_tunnel.wait() for checking url invalid");
-            if context.is_local() {
-                counter!(METRICS_PROXY_HTTP_ERROR_COUNT).increment(1);
-            } else {
-                counter!(METRICS_PROXY_CLUSTER_ERROR_COUNT).increment(1);
-            }
-            return;
-        }
-        _ => {}
+        return;
     }
 
     log::info!(
@@ -132,18 +118,13 @@ async fn tunnel_over_cluster<'a>(
     histogram!(METRICS_TUNNEL_CLUSTER_HISTOGRAM)
         .record(started.elapsed().as_millis() as f32 / 1000.0);
 
-    let req_buf: Vec<u8> = (&ClusterTunnelRequest {
+    let req = ClusterTunnelRequest {
         domain: domain.clone(),
         handshake: proxy_tunnel.handshake().to_vec(),
-    })
-        .into();
-    send.write_all(&req_buf).await?;
-    let mut res_buf = [0; 1500];
-    let res_size = recv
-        .read(&mut res_buf)
-        .await?
-        .ok_or("ClusterTunnelResponse not received".to_string())?;
-    let res = ClusterTunnelResponse::try_from(&res_buf[..res_size])?;
+    };
+
+    write_object::<_, _, 1000>(&mut send, req).await?;
+    let res = wait_object::<_, ClusterTunnelResponse, 1000>(&mut recv).await?;
     if !res.success {
         log::error!("ClusterTunnelResponse not success");
         return Err("ClusterTunnelResponse not success".into());
@@ -155,17 +136,16 @@ async fn tunnel_over_cluster<'a>(
     let job1 = futures::io::copy(&mut reader1, &mut send);
     let job2 = futures::io::copy(&mut recv, &mut writer1);
 
-    select! {
-        e = job1.fuse() => {
-            if let Err(e) = e {
-                log::info!("agent => proxy error: {}", e);
-            }
-        }
-        e = job2.fuse() => {
-            if let Err(e) = e {
-                log::info!("proxy => agent error: {}", e);
-            }
-        }
+    let (res1, res2) = futures::join!(job1, job2);
+
+    match res1 {
+        Ok(len) => log::info!("tunnel quic-remote to proxy end with {} bytes", len),
+        Err(err) => log::error!("tunnel from quic-remote to proxy error {err:?}"),
+    }
+
+    match res2 {
+        Ok(len) => log::info!("tunnel proxy to quic-remote end with {} bytes", len),
+        Err(err) => log::error!("tunnel from proxy to quic-remote error {err:?}"),
     }
 
     log::info!("end cluster proxy tunnel for domain {}", domain);
