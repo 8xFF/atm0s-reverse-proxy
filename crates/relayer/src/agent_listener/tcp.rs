@@ -53,6 +53,7 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Debug>
                     stream.write_all(&res).await?;
                     Ok(AgentTcpConnection {
                         domain,
+                        conn_id: rand::random(),
                         connection: yamux::Connection::new(
                             stream,
                             Default::default(),
@@ -111,6 +112,7 @@ impl<
 
 pub struct AgentTcpConnection {
     domain: String,
+    conn_id: u64,
     connection: yamux::Connection<TcpStream>,
 }
 
@@ -120,6 +122,10 @@ impl AgentConnection<AgentTcpSubConnection, ReadHalf<yamux::Stream>, WriteHalf<y
 {
     fn domain(&self) -> String {
         self.domain.clone()
+    }
+
+    fn conn_id(&self) -> u64 {
+        self.conn_id
     }
 
     async fn create_sub_connection(&mut self) -> Result<AgentTcpSubConnection, Box<dyn Error>> {
