@@ -29,6 +29,7 @@ pub trait AgentListener<C: AgentConnection<S>, S: AgentSubConnection> {
 pub trait AgentConnectionHandler<S: AgentSubConnection + Send + Sync>:
     Send + Sync + Clone + 'static
 {
+    fn name(&self) -> &str;
     fn handle(
         &self,
         agent_domain: &str,
@@ -57,6 +58,10 @@ impl<S: AgentSubConnection> Default for AgentIncomingConnHandlerDummy<S> {
 }
 
 impl<S: AgentSubConnection> AgentConnectionHandler<S> for AgentIncomingConnHandlerDummy<S> {
+    fn name(&self) -> &str {
+        "dummy"
+    }
+
     async fn handle(&self, agent_domain: &str, _connection: S) -> Result<(), Box<dyn Error>> {
         log::info!("on connection from agent {}", agent_domain);
         Ok(())

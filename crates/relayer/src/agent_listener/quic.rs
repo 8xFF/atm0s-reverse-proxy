@@ -179,7 +179,7 @@ impl AsyncRead for AgentQuicSubConnection {
             // Quinn seems to have some issue with close connection. the Writer side already close but
             // Reader side only fire bellow error
             Poll::Ready(Err(quinn::ReadError::ConnectionLost(
-                ConnectionError::ConnectionClosed(_),
+                ConnectionError::ApplicationClosed(_),
             ))) => Poll::Ready(Ok(0)),
             e => e.map_err(|e| e.into()),
         }

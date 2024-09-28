@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use local_tunnel::tcp::LocalTcpTunnel;
 use protocol::{
     cluster::{wait_object, AgentTunnelRequest},
     stream::pipeline_streams,
@@ -14,7 +13,9 @@ pub use connection::{
     tcp::{TcpConnection, TcpSubConnection},
     Connection, Protocol, SubConnection,
 };
-pub use local_tunnel::{registry::SimpleServiceRegistry, LocalTunnel, ServiceRegistry};
+pub use local_tunnel::{
+    registry::SimpleServiceRegistry, tcp::LocalTcpTunnel, LocalTunnel, ServiceRegistry,
+};
 
 pub async fn run_tunnel_connection<S>(
     mut incoming_proxy_conn: S,
@@ -37,7 +38,7 @@ pub async fn run_tunnel_connection<S>(
                     registry.dest_for(handshake.tls, handshake.service, &handshake.domain)
                 {
                     log::info!("create tunnel to dest {}", dest);
-                    LocalTcpTunnel::new(dest).await
+                    LocalTcpTunnel::connect(dest).await
                 } else {
                     log::warn!(
                         "dest for service {:?} tls {} domain {} not found",

@@ -109,6 +109,7 @@ where
         let domain = self.connection.domain();
         async_std::task::spawn(async move {
             gauge!(METRICS_PROXY_AGENT_LIVE).increment(1.0);
+            log::info!("handle agent connection with external logic");
             if let Err(e) = handler.handle(&domain, conn).await {
                 counter!(METRICS_PROXY_AGENT_ERROR_COUNT).increment(1);
                 log::error!("handle agent connection error {:?}", e);
@@ -126,12 +127,14 @@ where
 
         match incoming {
             IncomingConn::FromProxy(conn) => {
+                log::info!("incoming connect request from proxy {}", conn.name());
                 if let Err(e) = self.handle_proxy_tunnel(conn).await {
                     log::error!("handle proxy tunnel error {:?}", e);
                     counter!(METRICS_TUNNEL_AGENT_ERROR_COUNT).increment(1);
                 }
             }
             IncomingConn::FromAgent(conn) => {
+                log::info!("incoming connect request from client {}", conn.name());
                 if let Err(e) = self.handle_agent_connection(conn).await {
                     log::error!("handle agent connection error {:?}", e);
                     counter!(METRICS_PROXY_AGENT_ERROR_COUNT).increment(1);

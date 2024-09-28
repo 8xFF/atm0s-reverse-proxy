@@ -16,10 +16,16 @@ pub struct LocalTcpTunnel {
 }
 
 impl LocalTcpTunnel {
-    pub async fn new(dest: SocketAddr) -> Result<Self, Box<dyn Error>> {
+    pub async fn connect(dest: SocketAddr) -> Result<Self, Box<dyn Error>> {
         Ok(Self {
             stream: TcpStream::connect(dest).await?,
         })
+    }
+}
+
+impl From<TcpStream> for LocalTcpTunnel {
+    fn from(stream: TcpStream) -> Self {
+        Self { stream }
     }
 }
 
