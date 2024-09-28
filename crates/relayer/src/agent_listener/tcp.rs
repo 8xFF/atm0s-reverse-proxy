@@ -16,7 +16,7 @@ use metrics::histogram;
 use protocol::key::ClusterValidator;
 use serde::de::DeserializeOwned;
 
-use crate::{utils::now_ms, METRICS_AGENT_HISTOGRAM};
+use crate::METRICS_AGENT_HISTOGRAM;
 
 use super::{AgentConnection, AgentListener, AgentSubConnection};
 
@@ -53,7 +53,7 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Debug>
                     stream.write_all(&res).await?;
                     Ok(AgentTcpConnection {
                         domain,
-                        conn_id: now_ms(),
+                        conn_id: rand::random(),
                         connection: yamux::Connection::new(
                             stream,
                             Default::default(),

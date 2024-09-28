@@ -14,7 +14,7 @@ use quinn::{Endpoint, RecvStream, SendStream, ServerConfig};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use serde::de::DeserializeOwned;
 
-use crate::{utils::now_ms, METRICS_AGENT_HISTOGRAM};
+use crate::METRICS_AGENT_HISTOGRAM;
 
 use super::{AgentConnection, AgentListener, AgentSubConnection};
 
@@ -99,7 +99,7 @@ impl<REQ: DeserializeOwned + Debug> AgentQuicListener<REQ> {
                     Ok(AgentQuicConnection {
                         domain,
                         conn,
-                        conn_id: now_ms(),
+                        conn_id: rand::random(),
                     })
                 }
                 Err(e) => {

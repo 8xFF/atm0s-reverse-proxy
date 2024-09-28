@@ -8,7 +8,7 @@ use async_std::channel::Sender;
 use crate::ProxyTunnel;
 
 pub struct AgentEntry {
-    pub session: u64,
+    pub conn_id: u64,
     pub tx: Sender<Box<dyn ProxyTunnel>>,
 }
 
@@ -19,11 +19,11 @@ pub struct AgentStore {
 }
 
 impl AgentStore {
-    pub fn add(&self, id: u64, session: u64, tx: Sender<Box<dyn ProxyTunnel>>) {
+    pub fn add(&self, id: u64, conn_id: u64, tx: Sender<Box<dyn ProxyTunnel>>) {
         self.agents
             .write()
             .expect("Should write agents")
-            .insert(id, AgentEntry { tx, session });
+            .insert(id, AgentEntry { tx, conn_id });
     }
 
     pub fn get(&self, id: u64) -> Option<Sender<Box<dyn ProxyTunnel>>> {
@@ -34,12 +34,12 @@ impl AgentStore {
             .map(|entry| entry.tx.clone())
     }
 
-    pub fn remove(&self, id: u64, session: u64) -> bool {
+    pub fn remove(&self, id: u64, conn_id: u64) -> bool {
         let mut storage = self.agents.write().expect("Should write agents");
 
         let current = storage.get(&id);
         if let Some(entry) = current {
-            if entry.session == session {
+            if entry.conn_id == conn_id {
                 storage.remove(&id);
                 return true;
             }

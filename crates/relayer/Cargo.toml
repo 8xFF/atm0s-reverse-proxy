@@ -26,6 +26,7 @@ rustls = { workspace = true, features = ["ring", "std"] }
 atm0s-sdn = { workspace = true }
 rtsp-types = { workspace = true }
 local-ip-address = { workspace = true }
+rand = { workspace = true }
 
 [features]
 default = ["binary"]
