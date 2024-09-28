@@ -1,7 +1,5 @@
-use std::sync::Arc;
-
-use futures::{AsyncRead, AsyncWrite};
 use metrics::{counter, gauge};
+use proxy_listener::ProxyTunnelWrap;
 
 use crate::utils::home_id_from_domain;
 
@@ -57,7 +55,7 @@ pub use proxy_listener::cluster::{
 };
 pub use quinn;
 
-pub use proxy_listener::cluster::{run_sdn, ProxyClusterListener, ProxyClusterTunnel};
+pub use proxy_listener::cluster::{run_sdn, ProxyClusterIncommingTunnel, ProxyClusterListener};
 pub use proxy_listener::tcp::{ProxyTcpListener, ProxyTcpTunnel};
 pub use proxy_listener::{ProxyListener, ProxyTunnel};
 
@@ -65,22 +63,24 @@ pub use agent_store::AgentStore;
 pub use proxy_listener::tcp::{HttpDomainDetector, RtspDomainDetector, TlsDomainDetector};
 pub use tunnel::{tunnel_task, TunnelContext};
 
-pub async fn run_agent_connection<AG, S, R, W>(
+pub async fn run_agent_connection<AG, S, H>(
     agent_connection: AG,
     agents: AgentStore,
     node_alias_sdk: AliasSdk,
-    agent_rpc_handler: Arc<dyn AgentConnectionHandler<S, R, W>>,
+    agent_rpc_handler: H,
 ) where
-    AG: AgentConnection<S, R, W> + 'static,
-    S: AgentSubConnection<R, W> + 'static,
-    R: AsyncRead + Send + Unpin + 'static,
-    W: AsyncWrite + Send + Unpin + 'static,
+    AG: AgentConnection<S> + 'static,
+    S: AgentSubConnection + 'static,
+    H: AgentConnectionHandler<S> + 'static,
 {
     counter!(METRICS_AGENT_COUNT).increment(1);
     log::info!("agent_connection.domain(): {}", agent_connection.domain());
     let domain = agent_connection.domain().to_string();
     let (mut agent_worker, proxy_tunnel_tx) =
-        agent_worker::AgentWorker::<AG, S, R, W>::new(agent_connection, agent_rpc_handler);
+        agent_worker::AgentWorker::<AG, ProxyTunnelWrap, S, H>::new(
+            agent_connection,
+            agent_rpc_handler,
+        );
     let home_id = home_id_from_domain(&domain);
     agents.add(home_id, proxy_tunnel_tx);
     node_alias_sdk.register_alias(home_id).await;

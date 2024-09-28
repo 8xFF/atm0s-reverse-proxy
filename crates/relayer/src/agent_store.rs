@@ -5,23 +5,23 @@ use std::{
 
 use async_std::channel::Sender;
 
-use crate::ProxyTunnel;
+use crate::proxy_listener::ProxyTunnelWrap;
 
 #[derive(Clone, Default)]
 pub struct AgentStore {
     #[allow(clippy::type_complexity)]
-    agents: Arc<RwLock<HashMap<u64, Sender<Box<dyn ProxyTunnel>>>>>,
+    agents: Arc<RwLock<HashMap<u64, Sender<ProxyTunnelWrap>>>>,
 }
 
 impl AgentStore {
-    pub fn add(&self, id: u64, tx: Sender<Box<dyn ProxyTunnel>>) {
+    pub fn add(&self, id: u64, tx: Sender<ProxyTunnelWrap>) {
         self.agents
             .write()
             .expect("Should write agents")
             .insert(id, tx);
     }
 
-    pub fn get(&self, id: u64) -> Option<Sender<Box<dyn ProxyTunnel>>> {
+    pub fn get(&self, id: u64) -> Option<Sender<ProxyTunnelWrap>> {
         self.agents
             .read()
             .expect("Should write agents")

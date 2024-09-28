@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use futures::{AsyncRead, AsyncWrite};
+use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use local_tunnel::tcp::LocalTcpTunnel;
 use protocol::cluster::{wait_object, AgentTunnelRequest};
 
@@ -63,8 +63,22 @@ where
     };
 
     let (mut reader2, mut writer2) = local_tunnel.split();
-    let job1 = futures::io::copy(&mut reader1, &mut writer2);
-    let job2 = futures::io::copy(&mut reader2, &mut writer1);
+    let job1 = async {
+        log::info!("task1 start");
+        let res = futures::io::copy(&mut reader1, &mut writer2).await;
+        writer2.flush().await;
+        writer2.close().await;
+        log::info!("task1 end {res:?}");
+        res
+    };
+    let job2 = async {
+        log::info!("task2 start");
+        let res = futures::io::copy(&mut reader2, &mut writer1).await;
+        writer1.flush().await;
+        writer1.close().await;
+        log::info!("task2 end {res:?}");
+        res
+    };
 
     let (res1, res2) = futures::join!(job1, job2);
 

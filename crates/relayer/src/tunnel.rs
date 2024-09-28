@@ -1,13 +1,9 @@
-use std::{
-    error::Error,
-    net::{SocketAddr, SocketAddrV4},
-    time::Instant,
-};
+use std::{error::Error, time::Instant};
 
 use crate::{
     proxy_listener::{
-        cluster::{make_quinn_client, AliasSdk, VirtualUdpSocket},
-        ProxyTunnel,
+        cluster::{AliasSdk, ProxyClusterOutgoingTunnel, VirtualUdpSocket},
+        ProxyTunnel, ProxyTunnelWrap,
     },
     utils::home_id_from_domain,
     AgentStore, METRICS_PROXY_CLUSTER_COUNT, METRICS_PROXY_CLUSTER_ERROR_COUNT,
@@ -16,7 +12,10 @@ use crate::{
     METRICS_TUNNEL_CLUSTER_HISTOGRAM, METRICS_TUNNEL_CLUSTER_LIVE,
 };
 use metrics::{counter, gauge, histogram};
-use protocol::cluster::{wait_object, write_object, ClusterTunnelRequest, ClusterTunnelResponse};
+use protocol::{
+    cluster::{wait_object, write_object, ClusterTunnelRequest, ClusterTunnelResponse},
+    stream::pipeline_streams,
+};
 use rustls::pki_types::CertificateDer;
 
 pub enum TunnelContext<'a> {
@@ -30,8 +29,8 @@ impl<'a> TunnelContext<'a> {
     }
 }
 
-pub async fn tunnel_task(
-    mut proxy_tunnel: Box<dyn ProxyTunnel>,
+pub async fn tunnel_task<P: ProxyTunnel + Into<ProxyTunnelWrap>>(
+    mut proxy_tunnel: P,
     agents: AgentStore,
     context: TunnelContext<'_>,
 ) {
@@ -61,14 +60,14 @@ pub async fn tunnel_task(
     let domain = proxy_tunnel.domain().to_string();
     let home_id = home_id_from_domain(&domain);
     if let Some(agent_tx) = agents.get(home_id) {
-        agent_tx.send(proxy_tunnel).await.ok();
+        agent_tx.send(proxy_tunnel.into()).await.ok();
     } else if let TunnelContext::Local(node_alias_sdk, virtual_net, server_certs) = context {
         counter!(METRICS_TUNNEL_CLUSTER_COUNT).increment(1);
         gauge!(METRICS_TUNNEL_CLUSTER_LIVE).increment(1.0);
         gauge!(METRICS_PROXY_HTTP_LIVE).increment(1.0);
         if let Err(e) = tunnel_over_cluster(
             domain,
-            proxy_tunnel,
+            proxy_tunnel.into(),
             node_alias_sdk,
             virtual_net,
             &server_certs,
@@ -88,15 +87,14 @@ pub async fn tunnel_task(
 
 async fn tunnel_over_cluster<'a>(
     domain: String,
-    mut proxy_tunnel: Box<dyn ProxyTunnel>,
+    proxy_tunnel: ProxyTunnelWrap,
     node_alias_sdk: AliasSdk,
     socket: VirtualUdpSocket,
     server_certs: &'a [CertificateDer<'a>],
 ) -> Result<(), Box<dyn Error>> {
     let started = Instant::now();
     log::warn!(
-        "[TunnerOverCluster] agent not found for domain: {} in local => finding in cluster",
-        domain
+        "[TunnerOverCluster] agent not found for domain: {domain} in local => finding in cluster",
     );
     let node_alias_id = home_id_from_domain(&domain);
     let dest = node_alias_sdk
@@ -104,16 +102,9 @@ async fn tunnel_over_cluster<'a>(
         .await
         .ok_or("NODE_ALIAS_NOT_FOUND".to_string())?;
     log::info!("[TunnerOverCluster]  found agent for domain: {domain} in node {dest}");
-    let client = make_quinn_client(socket, server_certs)?;
-    log::info!("[TunnerOverCluster] connecting to agent for domain: {domain} in node {dest}");
-    let connecting = client.connect(
-        SocketAddr::V4(SocketAddrV4::new(dest.into(), 443)),
-        "cluster",
-    )?;
-    let connection = connecting.await?;
-    log::info!("[TunnerOverCluster]  connected to agent for domain: {domain} in node {dest}");
-    let (mut send, mut recv) = connection.open_bi().await?;
-    log::info!("[TunnerOverCluster] opened bi stream to agent for domain: {domain} in node {dest}");
+
+    let mut outgoing_tunnel =
+        ProxyClusterOutgoingTunnel::connect(socket, dest.into(), &domain, server_certs).await?;
 
     histogram!(METRICS_TUNNEL_CLUSTER_HISTOGRAM)
         .record(started.elapsed().as_millis() as f32 / 1000.0);
@@ -123,31 +114,27 @@ async fn tunnel_over_cluster<'a>(
         handshake: proxy_tunnel.handshake().to_vec(),
     };
 
-    write_object::<_, _, 1000>(&mut send, req).await?;
-    let res = wait_object::<_, ClusterTunnelResponse, 1000>(&mut recv).await?;
+    write_object::<_, _, 1000>(&mut outgoing_tunnel, req).await?;
+    let res = wait_object::<_, ClusterTunnelResponse, 1000>(&mut outgoing_tunnel).await?;
     if !res.success {
-        log::error!("ClusterTunnelResponse not success");
+        log::error!("[TunnerOverCluster] ClusterTunnelResponse not success");
         return Err("ClusterTunnelResponse not success".into());
     }
 
-    log::info!("start cluster proxy tunnel for domain {}", domain);
+    log::info!("[TunnerOverCluster] start cluster proxy tunnel for domain {domain}");
 
-    let (mut reader1, mut writer1) = proxy_tunnel.split();
-    let job1 = futures::io::copy(&mut reader1, &mut send);
-    let job2 = futures::io::copy(&mut recv, &mut writer1);
-
-    let (res1, res2) = futures::join!(job1, job2);
-
-    match res1 {
-        Ok(len) => log::info!("tunnel quic-remote to proxy end with {} bytes", len),
-        Err(err) => log::error!("tunnel from quic-remote to proxy error {err:?}"),
+    match pipeline_streams(proxy_tunnel, outgoing_tunnel).await {
+        Ok(res) => {
+            log::info!(
+                "[TunnerOverCluster] end cluster proxy tunnel for domain {domain}, res {res:?}"
+            );
+        }
+        Err(e) => {
+            log::error!(
+                "[TunnerOverCluster] end cluster proxy tunnel for domain {domain} err {e:?}"
+            );
+        }
     }
 
-    match res2 {
-        Ok(len) => log::info!("tunnel proxy to quic-remote end with {} bytes", len),
-        Err(err) => log::error!("tunnel from proxy to quic-remote error {err:?}"),
-    }
-
-    log::info!("end cluster proxy tunnel for domain {}", domain);
     Ok(())
 }

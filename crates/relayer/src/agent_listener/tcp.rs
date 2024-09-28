@@ -8,12 +8,9 @@ use std::{
 };
 
 use async_std::net::{TcpListener, TcpStream};
-use futures::{
-    io::{ReadHalf, WriteHalf},
-    AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Future,
-};
+use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Future};
 use metrics::histogram;
-use protocol::key::ClusterValidator;
+use protocol::{key::ClusterValidator, stream::NamedStream};
 use serde::de::DeserializeOwned;
 
 use crate::METRICS_AGENT_HISTOGRAM;
@@ -77,17 +74,10 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Debug>
     }
 }
 
-#[async_trait::async_trait]
 impl<
         VALIDATE: ClusterValidator<REQ> + Send + Sync,
         REQ: DeserializeOwned + Send + Sync + Debug,
-    >
-    AgentListener<
-        AgentTcpConnection,
-        AgentTcpSubConnection,
-        ReadHalf<yamux::Stream>,
-        WriteHalf<yamux::Stream>,
-    > for AgentTcpListener<VALIDATE, REQ>
+    > AgentListener<AgentTcpConnection, AgentTcpSubConnection> for AgentTcpListener<VALIDATE, REQ>
 {
     async fn recv(&mut self) -> Result<AgentTcpConnection, Box<dyn Error>> {
         loop {
@@ -114,10 +104,7 @@ pub struct AgentTcpConnection {
     connection: yamux::Connection<TcpStream>,
 }
 
-#[async_trait::async_trait]
-impl AgentConnection<AgentTcpSubConnection, ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>>
-    for AgentTcpConnection
-{
+impl AgentConnection<AgentTcpSubConnection> for AgentTcpConnection {
     fn domain(&self) -> String {
         self.domain.clone()
     }
@@ -147,11 +134,49 @@ pub struct AgentTcpSubConnection {
     stream: yamux::Stream,
 }
 
-impl AgentSubConnection<ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>>
-    for AgentTcpSubConnection
-{
-    fn split(self) -> (ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>) {
-        AsyncReadExt::split(self.stream)
+impl AgentSubConnection for AgentTcpSubConnection {}
+
+impl NamedStream for AgentTcpSubConnection {
+    fn name(&self) -> &'static str {
+        "agent-yamux-tcp"
+    }
+}
+
+impl AsyncRead for AgentTcpSubConnection {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut [u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        let this = self.get_mut();
+        Pin::new(&mut this.stream).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for AgentTcpSubConnection {
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        let this = self.get_mut();
+        Pin::new(&mut this.stream).poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        let this = self.get_mut();
+        Pin::new(&mut this.stream).poll_flush(cx)
+    }
+
+    fn poll_close(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        let this = self.get_mut();
+        Pin::new(&mut this.stream).poll_close(cx)
     }
 }
 

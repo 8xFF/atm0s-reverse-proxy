@@ -3,58 +3,51 @@
 use std::error::Error;
 
 use futures::{AsyncRead, AsyncWrite};
+use protocol::stream::NamedStream;
 
 pub mod quic;
 pub mod tcp;
 
-pub trait AgentSubConnection<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>: Send + Sync {
-    fn split(self) -> (R, W);
+pub trait AgentSubConnection:
+    AsyncRead + AsyncWrite + NamedStream + Send + Sync + Unpin + 'static
+{
 }
 
-#[async_trait::async_trait]
-pub trait AgentConnection<S: AgentSubConnection<R, W>, R: AsyncRead + Unpin, W: AsyncWrite + Unpin>:
-    Send + Sync
-{
+pub trait AgentConnection<S: AgentSubConnection> {
     fn domain(&self) -> String;
-    async fn create_sub_connection(&mut self) -> Result<S, Box<dyn Error>>;
-    async fn recv(&mut self) -> Result<S, Box<dyn Error>>;
+    fn create_sub_connection(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<S, Box<dyn Error>>> + Send;
+    fn recv(&mut self) -> impl std::future::Future<Output = Result<S, Box<dyn Error>>> + Send;
 }
 
-#[async_trait::async_trait]
-pub trait AgentListener<
-    C: AgentConnection<S, R, W>,
-    S: AgentSubConnection<R, W>,
-    R: AsyncRead + Unpin,
-    W: AsyncWrite + Unpin,
->: Send + Sync
+pub trait AgentListener<C: AgentConnection<S>, S: AgentSubConnection> {
+    fn recv(&mut self) -> impl std::future::Future<Output = Result<C, Box<dyn Error>>> + Send;
+}
+
+pub trait AgentConnectionHandler<S: AgentSubConnection + Send + Sync>:
+    Send + Sync + Clone + 'static
 {
-    async fn recv(&mut self) -> Result<C, Box<dyn Error>>;
+    fn handle(
+        &self,
+        agent_domain: &str,
+        connection: S,
+    ) -> impl std::future::Future<Output = Result<(), Box<dyn Error>>> + Send;
 }
 
-#[async_trait::async_trait]
-pub trait AgentConnectionHandler<
-    S: AgentSubConnection<R, W>,
-    R: AsyncRead + Unpin,
-    W: AsyncWrite + Unpin,
->: Send + Sync
-{
-    async fn handle(&self, agent_domain: &str, connection: S) -> Result<(), Box<dyn Error>>;
+pub struct AgentIncomingConnHandlerDummy<S: AgentSubConnection> {
+    _phantom: std::marker::PhantomData<S>,
 }
 
-pub struct AgentIncomingConnHandlerDummy<
-    S: AgentSubConnection<R, W>,
-    R: AsyncRead + Send + Sync + Unpin,
-    W: AsyncWrite + Send + Sync + Unpin,
-> {
-    _phantom: std::marker::PhantomData<(S, R, W)>,
+impl<S: AgentSubConnection> Clone for AgentIncomingConnHandlerDummy<S> {
+    fn clone(&self) -> Self {
+        Self {
+            _phantom: self._phantom.clone(),
+        }
+    }
 }
 
-impl<
-        S: AgentSubConnection<R, W>,
-        R: AsyncRead + Send + Sync + Unpin,
-        W: AsyncWrite + Send + Sync + Unpin,
-    > Default for AgentIncomingConnHandlerDummy<S, R, W>
-{
+impl<S: AgentSubConnection> Default for AgentIncomingConnHandlerDummy<S> {
     fn default() -> Self {
         Self {
             _phantom: std::marker::PhantomData,
@@ -62,13 +55,7 @@ impl<
     }
 }
 
-#[async_trait::async_trait]
-impl<
-        S: AgentSubConnection<R, W>,
-        R: AsyncRead + Send + Sync + Unpin,
-        W: AsyncWrite + Send + Sync + Unpin,
-    > AgentConnectionHandler<S, R, W> for AgentIncomingConnHandlerDummy<S, R, W>
-{
+impl<S: AgentSubConnection> AgentConnectionHandler<S> for AgentIncomingConnHandlerDummy<S> {
     async fn handle(&self, agent_domain: &str, _connection: S) -> Result<(), Box<dyn Error>> {
         log::info!("on connection from agent {}", agent_domain);
         Ok(())

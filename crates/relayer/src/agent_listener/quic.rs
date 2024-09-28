@@ -3,13 +3,15 @@ use std::{
     fmt::Debug,
     marker::PhantomData,
     net::SocketAddr,
+    pin::Pin,
     sync::Arc,
     time::{Duration, Instant},
 };
 
 use async_std::channel::Receiver;
+use futures::{AsyncRead, AsyncWrite};
 use metrics::histogram;
-use protocol::key::ClusterValidator;
+use protocol::{key::ClusterValidator, stream::NamedStream};
 use quinn::{Endpoint, RecvStream, SendStream, ServerConfig};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use serde::de::DeserializeOwned;
@@ -113,10 +115,8 @@ impl<REQ: DeserializeOwned + Debug> AgentQuicListener<REQ> {
     }
 }
 
-#[async_trait::async_trait]
 impl<REQ: DeserializeOwned + Send + Sync + Debug>
-    AgentListener<AgentQuicConnection, AgentQuicSubConnection, RecvStream, SendStream>
-    for AgentQuicListener<REQ>
+    AgentListener<AgentQuicConnection, AgentQuicSubConnection> for AgentQuicListener<REQ>
 {
     async fn recv(&mut self) -> Result<AgentQuicConnection, Box<dyn Error>> {
         self.rx.recv().await.map_err(|e| e.into())
@@ -128,8 +128,7 @@ pub struct AgentQuicConnection {
     conn: quinn::Connection,
 }
 
-#[async_trait::async_trait]
-impl AgentConnection<AgentQuicSubConnection, RecvStream, SendStream> for AgentQuicConnection {
+impl AgentConnection<AgentQuicSubConnection> for AgentQuicConnection {
     fn domain(&self) -> String {
         self.domain.clone()
     }
@@ -150,9 +149,51 @@ pub struct AgentQuicSubConnection {
     recv: RecvStream,
 }
 
-impl AgentSubConnection<RecvStream, SendStream> for AgentQuicSubConnection {
-    fn split(self) -> (RecvStream, SendStream) {
-        (self.recv, self.send)
+impl AgentSubConnection for AgentQuicSubConnection {}
+
+impl NamedStream for AgentQuicSubConnection {
+    fn name(&self) -> &'static str {
+        "agent-quic"
+    }
+}
+
+impl AsyncRead for AgentQuicSubConnection {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut [u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        let this = self.get_mut();
+        Pin::new(&mut this.recv).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for AgentQuicSubConnection {
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        let this = self.get_mut();
+        Pin::new(&mut this.send)
+            .poll_write(cx, buf)
+            .map_err(|e| e.into())
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        let this = self.get_mut();
+        Pin::new(&mut this.send).poll_flush(cx)
+    }
+
+    fn poll_close(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        let this = self.get_mut();
+        Pin::new(&mut this.send).poll_close(cx)
     }
 }
 

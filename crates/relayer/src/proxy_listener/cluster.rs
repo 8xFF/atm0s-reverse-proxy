@@ -1,6 +1,10 @@
 use std::{
-    net::SocketAddr,
+    error::Error,
+    io,
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    pin::Pin,
     sync::Arc,
+    task::{Context, Poll, Waker},
     time::{Duration, Instant},
 };
 
@@ -16,8 +20,11 @@ use atm0s_sdn::{
     ServiceBroadcastLevel,
 };
 use futures::{AsyncRead, AsyncWrite};
-use protocol::cluster::{wait_object, write_object, ClusterTunnelRequest, ClusterTunnelResponse};
-use quinn::{Endpoint, Incoming};
+use protocol::{
+    cluster::{wait_object, write_object, ClusterTunnelRequest, ClusterTunnelResponse},
+    stream::NamedStream,
+};
+use quinn::{Endpoint, Incoming, RecvStream, SendStream};
 
 use alias_async::AliasAsyncEvent;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
@@ -217,34 +224,34 @@ impl ProxyClusterListener {
     }
 }
 
-#[async_trait::async_trait]
 impl ProxyListener for ProxyClusterListener {
-    async fn recv(&mut self) -> Option<Box<dyn ProxyTunnel>> {
+    type Stream = ProxyClusterIncommingTunnel;
+    async fn recv(&mut self) -> Option<Self::Stream> {
         let connecting = self.server.accept().await?;
         log::info!("incoming connection from {}", connecting.remote_address());
-        Some(Box::new(ProxyClusterTunnel {
+        Some(ProxyClusterIncommingTunnel {
             virtual_addr: connecting.remote_address(),
             domain: "".to_string(),
             handshake: vec![],
             connecting: Some(connecting),
             streams: None,
-        }))
+            wait_stream_read: None,
+            wait_stream_write: None,
+        })
     }
 }
 
-pub struct ProxyClusterTunnel {
+pub struct ProxyClusterIncommingTunnel {
     virtual_addr: SocketAddr,
     domain: String,
     handshake: Vec<u8>,
     connecting: Option<Incoming>,
-    streams: Option<(
-        Box<dyn AsyncRead + Send + Sync + Unpin>,
-        Box<dyn AsyncWrite + Send + Sync + Unpin>,
-    )>,
+    streams: Option<(RecvStream, SendStream)>,
+    wait_stream_read: Option<Waker>,
+    wait_stream_write: Option<Waker>,
 }
 
-#[async_trait::async_trait]
-impl ProxyTunnel for ProxyClusterTunnel {
+impl ProxyTunnel for ProxyClusterIncommingTunnel {
     fn source_addr(&self) -> String {
         format!("sdn-quic://{}", self.virtual_addr)
     }
@@ -271,7 +278,13 @@ impl ProxyTunnel for ProxyClusterTunnel {
 
         self.domain = req.domain;
         self.handshake = req.handshake;
-        self.streams = Some((Box::new(recv), Box::new(send)));
+        self.streams = Some((recv, send));
+        if let Some(waker) = self.wait_stream_read.take() {
+            waker.wake();
+        }
+        if let Some(waker) = self.wait_stream_write.take() {
+            waker.wake();
+        }
         Some(())
     }
     fn local(&self) -> bool {
@@ -283,12 +296,135 @@ impl ProxyTunnel for ProxyClusterTunnel {
     fn handshake(&self) -> &[u8] {
         &self.handshake
     }
-    fn split(
-        &mut self,
-    ) -> (
-        Box<dyn AsyncRead + Send + Sync + Unpin>,
-        Box<dyn AsyncWrite + Send + Sync + Unpin>,
-    ) {
-        self.streams.take().expect("Should has send and recv")
+}
+
+impl NamedStream for ProxyClusterIncommingTunnel {
+    fn name(&self) -> &'static str {
+        "proxy-sdn-quic-tunnel"
+    }
+}
+
+impl AsyncRead for ProxyClusterIncommingTunnel {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        match this.streams {
+            Some((ref mut read, _)) => Pin::new(read).poll_read(cx, buf),
+            None => {
+                this.wait_stream_read = Some(cx.waker().clone());
+                Poll::Pending
+            }
+        }
+    }
+}
+
+impl AsyncWrite for ProxyClusterIncommingTunnel {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        match this.streams {
+            Some((_, ref mut write)) => Pin::new(write).poll_write(cx, buf).map_err(|e| e.into()),
+            None => {
+                this.wait_stream_write = Some(cx.waker().clone());
+                Poll::Pending
+            }
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        match this.streams {
+            Some((_, ref mut write)) => Pin::new(write).poll_flush(cx),
+            None => {
+                this.wait_stream_write = Some(cx.waker().clone());
+                Poll::Pending
+            }
+        }
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        match this.streams {
+            Some((_, ref mut write)) => Pin::new(write).poll_close(cx),
+            None => {
+                this.wait_stream_write = Some(cx.waker().clone());
+                Poll::Pending
+            }
+        }
+    }
+}
+
+pub struct ProxyClusterOutgoingTunnel {
+    send: SendStream,
+    recv: RecvStream,
+}
+
+impl ProxyClusterOutgoingTunnel {
+    pub async fn connect<'a>(
+        socket: VirtualUdpSocket,
+        dest: Ipv4Addr,
+        domain: &str,
+        server_certs: &[CertificateDer<'a>],
+    ) -> Result<Self, Box<dyn Error>> {
+        let client = make_quinn_client(socket, server_certs)?;
+        log::info!(
+            "[ProxyClusterOutgoingTunnel] connecting to agent for domain: {domain} in node {dest}"
+        );
+        let connecting = client.connect(SocketAddr::V4(SocketAddrV4::new(dest, 443)), "cluster")?;
+        let connection = connecting.await?;
+        log::info!(
+            "[ProxyClusterOutgoingTunnel]  connected to agent for domain: {domain} in node {dest}"
+        );
+        let (send, recv) = connection.open_bi().await?;
+        log::info!(
+            "[ProxyClusterOutgoingTunnel] opened bi stream to agent for domain: {domain} in node {dest}"
+        );
+        Ok(Self { send, recv })
+    }
+}
+
+impl NamedStream for ProxyClusterOutgoingTunnel {
+    fn name(&self) -> &'static str {
+        "outgoing-sdn-quic-tunnel"
+    }
+}
+
+impl AsyncRead for ProxyClusterOutgoingTunnel {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        Pin::new(&mut this.recv).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for ProxyClusterOutgoingTunnel {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        Pin::new(&mut this.send)
+            .poll_write(cx, buf)
+            .map_err(|e| e.into())
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        Pin::new(&mut this.send).poll_flush(cx)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        Pin::new(&mut this.send).poll_close(cx)
     }
 }

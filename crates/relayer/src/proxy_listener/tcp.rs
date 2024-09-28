@@ -1,11 +1,12 @@
 use std::{
-    net::{Ipv4Addr, SocketAddr},
+    net::{Ipv4Addr, Shutdown, SocketAddr},
+    pin::Pin,
     sync::Arc,
 };
 
 use async_std::net::{TcpListener, TcpStream};
-use futures::{AsyncRead, AsyncReadExt, AsyncWrite};
-use protocol::cluster::AgentTunnelRequest;
+use futures::{AsyncRead, AsyncWrite};
+use protocol::{cluster::AgentTunnelRequest, stream::NamedStream};
 
 use super::{DomainDetector, ProxyListener, ProxyTunnel};
 
@@ -46,20 +47,20 @@ impl ProxyTcpListener {
     }
 }
 
-#[async_trait::async_trait]
 impl ProxyListener for ProxyTcpListener {
-    async fn recv(&mut self) -> Option<Box<dyn ProxyTunnel>> {
+    type Stream = ProxyTcpTunnel;
+    async fn recv(&mut self) -> Option<Self::Stream> {
         let (stream, remote) = self.tcp_listener.accept().await.ok()?;
         log::info!("[ProxyTcpListener] new conn from {}", remote);
-        Some(Box::new(ProxyTcpTunnel {
+        Some(ProxyTcpTunnel {
             stream_addr: remote,
             detector: self.detector.clone(),
             service: self.service,
             domain: "".to_string(),
             handshake: vec![],
-            stream: Some(stream),
+            stream,
             tls: self.tls,
-        }))
+        })
     }
 }
 
@@ -68,12 +69,11 @@ pub struct ProxyTcpTunnel {
     detector: Arc<dyn DomainDetector>,
     service: Option<u16>,
     domain: String,
-    stream: Option<TcpStream>,
+    stream: TcpStream,
     handshake: Vec<u8>,
     tls: bool,
 }
 
-#[async_trait::async_trait]
 impl ProxyTunnel for ProxyTcpTunnel {
     fn source_addr(&self) -> String {
         if self.tls {
@@ -86,8 +86,7 @@ impl ProxyTunnel for ProxyTcpTunnel {
     async fn wait(&mut self) -> Option<()> {
         log::info!("[ProxyTcpTunnel] wait first data for checking url...");
         let mut first_pkt = [0u8; 4096];
-        let stream = self.stream.as_mut()?;
-        let first_pkt_size = stream.peek(&mut first_pkt).await.ok()?;
+        let first_pkt_size = self.stream.peek(&mut first_pkt).await.ok()?;
         log::info!(
             "[ProxyTcpTunnel] read {} bytes for determine url",
             first_pkt_size
@@ -118,14 +117,49 @@ impl ProxyTunnel for ProxyTcpTunnel {
     fn handshake(&self) -> &[u8] {
         &self.handshake
     }
+}
 
-    fn split(
-        &mut self,
-    ) -> (
-        Box<dyn AsyncRead + Send + Sync + Unpin>,
-        Box<dyn AsyncWrite + Send + Sync + Unpin>,
-    ) {
-        let (read, write) = AsyncReadExt::split(self.stream.take().expect("Should has stream"));
-        (Box::new(read), Box::new(write))
+impl NamedStream for ProxyTcpTunnel {
+    fn name(&self) -> &'static str {
+        "proxy-direct-tcp-tunnel"
+    }
+}
+
+impl AsyncRead for ProxyTcpTunnel {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut [u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        let this = self.get_mut();
+        Pin::new(&mut this.stream).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for ProxyTcpTunnel {
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        let this = self.get_mut();
+        Pin::new(&mut this.stream).poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        let this = self.get_mut();
+        Pin::new(&mut this.stream).poll_flush(cx)
+    }
+
+    fn poll_close(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        let this = self.get_mut();
+        // We need to call shutdown here, without it the proxy will stuck forever
+        std::task::Poll::Ready(Pin::new(&mut this.stream).shutdown(Shutdown::Write))
     }
 }
