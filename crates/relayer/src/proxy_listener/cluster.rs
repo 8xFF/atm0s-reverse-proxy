@@ -225,11 +225,11 @@ impl ProxyClusterListener {
 }
 
 impl ProxyListener for ProxyClusterListener {
-    type Stream = ProxyClusterIncommingTunnel;
+    type Stream = ProxyClusterIncomingTunnel;
     async fn recv(&mut self) -> Option<Self::Stream> {
         let connecting = self.server.accept().await?;
         log::info!("incoming connection from {}", connecting.remote_address());
-        Some(ProxyClusterIncommingTunnel {
+        Some(ProxyClusterIncomingTunnel {
             virtual_addr: connecting.remote_address(),
             domain: "".to_string(),
             handshake: vec![],
@@ -241,7 +241,7 @@ impl ProxyListener for ProxyClusterListener {
     }
 }
 
-pub struct ProxyClusterIncommingTunnel {
+pub struct ProxyClusterIncomingTunnel {
     virtual_addr: SocketAddr,
     domain: String,
     handshake: Vec<u8>,
@@ -251,7 +251,7 @@ pub struct ProxyClusterIncommingTunnel {
     wait_stream_write: Option<Waker>,
 }
 
-impl ProxyTunnel for ProxyClusterIncommingTunnel {
+impl ProxyTunnel for ProxyClusterIncomingTunnel {
     fn source_addr(&self) -> String {
         format!("sdn-quic://{}", self.virtual_addr)
     }
@@ -298,13 +298,13 @@ impl ProxyTunnel for ProxyClusterIncommingTunnel {
     }
 }
 
-impl NamedStream for ProxyClusterIncommingTunnel {
+impl NamedStream for ProxyClusterIncomingTunnel {
     fn name(&self) -> &'static str {
         "proxy-sdn-quic-tunnel"
     }
 }
 
-impl AsyncRead for ProxyClusterIncommingTunnel {
+impl AsyncRead for ProxyClusterIncomingTunnel {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -329,7 +329,7 @@ impl AsyncRead for ProxyClusterIncommingTunnel {
     }
 }
 
-impl AsyncWrite for ProxyClusterIncommingTunnel {
+impl AsyncWrite for ProxyClusterIncomingTunnel {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

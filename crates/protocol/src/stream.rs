@@ -179,7 +179,7 @@ where
                         Poll::Pending => {}
                     }
                 } else if copy_buffer.is_lock_write() {
-                    // we finish then switch to ShutingDonw
+                    // we finish then switch to ShuttingDown
                     log::info!(
                         "[OneDirectCopy {} => {}] write finished after {} bytes => switch to ShuttingDown state",
                         from.name(),

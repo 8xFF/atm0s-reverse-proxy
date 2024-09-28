@@ -7,7 +7,7 @@ use futures::{AsyncRead, AsyncWrite};
 use protocol::stream::NamedStream;
 use tcp::ProxyTcpTunnel;
 
-use crate::ProxyClusterIncommingTunnel;
+use crate::ProxyClusterIncomingTunnel;
 
 pub mod cluster;
 pub mod tcp;
@@ -35,7 +35,7 @@ pub trait ProxyListener: Send + Sync {
 #[derive(From)]
 pub enum ProxyTunnelWrap {
     Tcp(ProxyTcpTunnel),
-    Cluster(ProxyClusterIncommingTunnel),
+    Cluster(ProxyClusterIncomingTunnel),
 }
 
 impl ProxyTunnel for ProxyTunnelWrap {
