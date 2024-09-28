@@ -20,11 +20,18 @@ pub struct AgentStore {
 
 impl AgentStore {
     pub fn add(&self, id: u64, conn_id: u64, tx: Sender<Box<dyn ProxyTunnel>>) {
-        log::warn!("add new connection for agent {id}, old connection will deactive");
-        self.agents
+        if let Some(agent) = self
+            .agents
             .write()
             .expect("Should write agents")
-            .insert(id, AgentEntry { tx, conn_id });
+            .insert(id, AgentEntry { tx, conn_id })
+        {
+            log::warn!(
+                "add new connection for agent {id}, old connection {} will deactive",
+                agent.conn_id
+            );
+            agent.tx.close();
+        }
     }
 
     pub fn get(&self, id: u64) -> Option<Sender<Box<dyn ProxyTunnel>>> {
