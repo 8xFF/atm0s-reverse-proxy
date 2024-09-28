@@ -42,7 +42,7 @@ pub struct AgentIncomingConnHandlerDummy<S: AgentSubConnection> {
 impl<S: AgentSubConnection> Clone for AgentIncomingConnHandlerDummy<S> {
     fn clone(&self) -> Self {
         Self {
-            _phantom: self._phantom.clone(),
+            _phantom: self._phantom,
         }
     }
 }

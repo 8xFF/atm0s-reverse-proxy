@@ -22,8 +22,8 @@ pub fn pipeline_streams<
     BidirectCopyStream {
         a,
         b,
-        a_to_b: OneDirectState::Running(CopyBuffer::default()),
-        b_to_a: OneDirectState::Running(CopyBuffer::default()),
+        a_to_b: OneDirectState::Running(Box::default()),
+        b_to_a: OneDirectState::Running(Box::default()),
     }
 }
 
@@ -102,7 +102,7 @@ impl CopyBuffer {
 }
 
 enum OneDirectState {
-    Running(CopyBuffer),
+    Running(Box<CopyBuffer>),
     ShuttingDown(usize),
     Done(usize),
 }
@@ -157,7 +157,7 @@ where
                 }
 
                 let read_buf = copy_buffer.front();
-                if read_buf.len() > 0 {
+                if !read_buf.is_empty() {
                     // we have some data to write
                     match to.as_mut().poll_write(cx, read_buf).map_err(|e| {
                         log::error!(
