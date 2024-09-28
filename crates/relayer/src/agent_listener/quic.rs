@@ -166,6 +166,9 @@ impl AsyncRead for AgentQuicSubConnection {
     ) -> Poll<std::io::Result<usize>> {
         let this = self.get_mut();
         match this.recv.poll_read(cx, buf) {
+            // TODO refactor
+            // Quinn seems to have some issue with close connection. the Writer side already close but
+            // Reader side only fire bellow error
             Poll::Ready(Err(quinn::ReadError::ConnectionLost(
                 ConnectionError::ConnectionClosed(_),
             ))) => Poll::Ready(Ok(0)),
