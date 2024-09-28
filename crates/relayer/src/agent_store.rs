@@ -20,6 +20,7 @@ pub struct AgentStore {
 
 impl AgentStore {
     pub fn add(&self, id: u64, conn_id: u64, tx: Sender<Box<dyn ProxyTunnel>>) {
+        log::warn!("add new connection for agent {id}, old connection will deactive");
         self.agents
             .write()
             .expect("Should write agents")
