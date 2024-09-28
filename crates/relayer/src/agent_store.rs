@@ -27,7 +27,7 @@ impl AgentStore {
             .insert(id, AgentEntry { tx, conn_id })
         {
             log::warn!(
-                "add new connection for agent {id}, old connection {} will deactive",
+                "add new connection for agent {id}, old connection {} will deactivate",
                 agent.conn_id
             );
             agent.tx.close();
