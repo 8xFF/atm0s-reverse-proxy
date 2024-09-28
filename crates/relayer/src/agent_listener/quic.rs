@@ -99,7 +99,11 @@ impl<REQ: DeserializeOwned + Debug> AgentQuicListener<REQ> {
                     log::info!("register request domain {}", domain);
                     let res_buf = cluster_validator.sign_response_res(&request, None);
                     send.write_all(&res_buf).await?;
-                    Ok(AgentQuicConnection { domain, conn })
+                    Ok(AgentQuicConnection {
+                        domain,
+                        conn,
+                        conn_id: rand::random(),
+                    })
                 }
                 Err(e) => {
                     log::error!("invalid register request {:?}, error {}", request, e);
@@ -126,12 +130,17 @@ impl<REQ: DeserializeOwned + Send + Sync + Debug>
 
 pub struct AgentQuicConnection {
     domain: String,
+    conn_id: u64,
     conn: quinn::Connection,
 }
 
 impl AgentConnection<AgentQuicSubConnection> for AgentQuicConnection {
     fn domain(&self) -> String {
         self.domain.clone()
+    }
+
+    fn conn_id(&self) -> u64 {
+        self.conn_id
     }
 
     async fn create_sub_connection(&mut self) -> Result<AgentQuicSubConnection, Box<dyn Error>> {

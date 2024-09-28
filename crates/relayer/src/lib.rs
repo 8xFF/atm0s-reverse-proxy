@@ -76,13 +76,15 @@ pub async fn run_agent_connection<AG, S, H>(
     counter!(METRICS_AGENT_COUNT).increment(1);
     log::info!("agent_connection.domain(): {}", agent_connection.domain());
     let domain = agent_connection.domain().to_string();
+    let conn_id = agent_connection.conn_id();
     let (mut agent_worker, proxy_tunnel_tx) =
         agent_worker::AgentWorker::<AG, ProxyTunnelWrap, S, H>::new(
             agent_connection,
             agent_rpc_handler,
         );
     let home_id = home_id_from_domain(&domain);
-    agents.add(home_id, proxy_tunnel_tx);
+    log::info!("added home_id: {}, conn_id: {}", home_id, conn_id);
+    agents.add(home_id, conn_id, proxy_tunnel_tx);
     node_alias_sdk.register_alias(home_id).await;
     let agents = agents.clone();
     gauge!(METRICS_AGENT_LIVE).increment(1.0);
@@ -96,10 +98,16 @@ pub async fn run_agent_connection<AG, S, H>(
             }
         }
     }
-    agents.remove(home_id);
-    node_alias_sdk
-        .unregister_alias(home_id_from_domain(&domain))
-        .await;
+    let removed = agents.remove(home_id, conn_id);
+    log::info!(
+        "remove home_id: {}, conn_id: {}, removed: {}",
+        home_id,
+        conn_id,
+        removed
+    );
+    if removed {
+        node_alias_sdk.unregister_alias(home_id).await;
+    }
     log::info!("agent_worker exit for domain: {}", domain);
     gauge!(METRICS_AGENT_LIVE).decrement(1.0);
 }

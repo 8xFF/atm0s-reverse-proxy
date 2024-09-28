@@ -27,6 +27,7 @@ atm0s-sdn = { workspace = true }
 rtsp-types = { workspace = true }
 local-ip-address = { workspace = true }
 derive_more = { workspace = true, features = ["from"] }
+rand = { workspace = true }
 
 [features]
 default = ["binary"]

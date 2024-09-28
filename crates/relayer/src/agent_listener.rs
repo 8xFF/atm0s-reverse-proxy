@@ -14,6 +14,7 @@ pub trait AgentSubConnection:
 }
 
 pub trait AgentConnection<S: AgentSubConnection> {
+    fn conn_id(&self) -> u64;
     fn domain(&self) -> String;
     fn create_sub_connection(
         &mut self,
