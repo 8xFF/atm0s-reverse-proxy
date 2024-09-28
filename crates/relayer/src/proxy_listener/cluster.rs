@@ -24,7 +24,7 @@ use protocol::{
     cluster::{wait_object, write_object, ClusterTunnelRequest, ClusterTunnelResponse},
     stream::NamedStream,
 };
-use quinn::{Endpoint, Incoming, RecvStream, SendStream};
+use quinn::{ConnectionError, Endpoint, Incoming, RecvStream, SendStream};
 
 use alias_async::AliasAsyncEvent;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
@@ -312,7 +312,12 @@ impl AsyncRead for ProxyClusterIncommingTunnel {
     ) -> Poll<io::Result<usize>> {
         let this = self.get_mut();
         match this.streams {
-            Some((ref mut read, _)) => Pin::new(read).poll_read(cx, buf),
+            Some((ref mut read, _)) => match read.poll_read(cx, buf) {
+                Poll::Ready(Err(quinn::ReadError::ConnectionLost(
+                    ConnectionError::ConnectionClosed(_),
+                ))) => Poll::Ready(Ok(0)),
+                e => e.map_err(|e| e.into()),
+            },
             None => {
                 this.wait_stream_read = Some(cx.waker().clone());
                 Poll::Pending
@@ -402,7 +407,12 @@ impl AsyncRead for ProxyClusterOutgoingTunnel {
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
         let this = self.get_mut();
-        Pin::new(&mut this.recv).poll_read(cx, buf)
+        match this.recv.poll_read(cx, buf) {
+            Poll::Ready(Err(quinn::ReadError::ConnectionLost(
+                ConnectionError::ConnectionClosed(_),
+            ))) => Poll::Ready(Ok(0)),
+            e => e.map_err(|e| e.into()),
+        }
     }
 }
 

@@ -1,27 +1,18 @@
+use helper::configure_client;
 use protocol::key::AgentSigner;
-use rustls::{client::danger::ServerCertVerifier, pki_types::CertificateDer};
+use rustls::pki_types::CertificateDer;
 use serde::de::DeserializeOwned;
-use std::{error::Error, net::ToSocketAddrs, sync::Arc, time::Duration};
+use std::{error::Error, net::ToSocketAddrs};
 use url::Url;
 
-use quinn::{
-    crypto::rustls::QuicClientConfig, ClientConfig, Endpoint, RecvStream, SendStream,
-    TransportConfig,
-};
+use quinn::Endpoint;
 
-use super::{Connection, SubConnection};
+mod helper;
+mod sub_conn;
 
-pub struct QuicSubConnection {
-    pub send: SendStream,
-    pub recv: RecvStream,
-}
+use super::Connection;
 
-impl SubConnection<RecvStream, SendStream> for QuicSubConnection {
-    fn split(self) -> (RecvStream, SendStream) {
-        (self.recv, self.send)
-    }
-}
-
+pub use sub_conn::QuicSubConnection;
 pub struct QuicConnection<RES> {
     response: RES,
     connection: quinn::Connection,
@@ -76,91 +67,14 @@ impl<RES: DeserializeOwned> QuicConnection<RES> {
 }
 
 #[async_trait::async_trait]
-impl<RES: Send + Sync> Connection<QuicSubConnection, RecvStream, SendStream>
-    for QuicConnection<RES>
-{
+impl<RES: Send + Sync> Connection<QuicSubConnection> for QuicConnection<RES> {
     async fn create_outgoing(&mut self) -> Result<QuicSubConnection, Box<dyn Error>> {
         let (send, recv) = self.connection.open_bi().await?;
-        Ok(QuicSubConnection { send, recv })
+        Ok(QuicSubConnection::new(send, recv))
     }
 
     async fn recv(&mut self) -> Result<QuicSubConnection, Box<dyn Error>> {
         let (send, recv) = self.connection.accept_bi().await?;
-        Ok(QuicSubConnection { send, recv })
-    }
-}
-
-fn configure_client(
-    server_certs: &[CertificateDer],
-    allow_quic_insecure: bool,
-) -> Result<ClientConfig, Box<dyn Error>> {
-    let mut config = if allow_quic_insecure {
-        let provider = rustls::crypto::CryptoProvider::get_default().unwrap();
-        ClientConfig::new(Arc::new(QuicClientConfig::try_from(
-            rustls::ClientConfig::builder()
-                .dangerous()
-                .with_custom_certificate_verifier(SkipServerVerification::new(provider.clone()))
-                .with_no_client_auth(),
-        )?))
-    } else {
-        let mut certs = rustls::RootCertStore::empty();
-        for cert in server_certs {
-            certs.add(cert.clone())?;
-        }
-        ClientConfig::with_root_certificates(Arc::new(certs))?
-    };
-
-    let mut transport = TransportConfig::default();
-    transport.keep_alive_interval(Some(Duration::from_secs(15)));
-    transport.max_idle_timeout(Some(
-        Duration::from_secs(30)
-            .try_into()
-            .expect("Should config timeout"),
-    ));
-    config.transport_config(Arc::new(transport));
-    Ok(config)
-}
-
-#[derive(Debug)]
-struct SkipServerVerification(Arc<rustls::crypto::CryptoProvider>);
-
-impl SkipServerVerification {
-    fn new(provider: Arc<rustls::crypto::CryptoProvider>) -> Arc<Self> {
-        Arc::new(Self(provider))
-    }
-}
-
-impl ServerCertVerifier for SkipServerVerification {
-    fn verify_tls12_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        self.0.signature_verification_algorithms.supported_schemes()
-    }
-
-    fn verify_server_cert(
-        &self,
-        _end_entity: &CertificateDer<'_>,
-        _intermediates: &[CertificateDer<'_>],
-        _server_name: &rustls::pki_types::ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: rustls::pki_types::UnixTime,
-    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::danger::ServerCertVerified::assertion())
+        Ok(QuicSubConnection::new(send, recv))
     }
 }

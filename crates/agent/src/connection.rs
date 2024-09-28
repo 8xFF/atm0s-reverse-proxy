@@ -4,6 +4,7 @@ use std::error::Error;
 
 use clap::ValueEnum;
 use futures::{AsyncRead, AsyncWrite};
+use protocol::stream::NamedStream;
 
 pub mod quic;
 pub mod tcp;
@@ -14,14 +15,10 @@ pub enum Protocol {
     Quic,
 }
 
-pub trait SubConnection<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>: Send + Sync {
-    fn split(self) -> (R, W);
-}
+pub trait SubConnection: AsyncRead + AsyncWrite + NamedStream + Unpin + Send + Sync {}
 
 #[async_trait::async_trait]
-pub trait Connection<S: SubConnection<R, W>, R: AsyncRead + Unpin, W: AsyncWrite + Unpin>:
-    Send + Sync
-{
+pub trait Connection<S: SubConnection>: Send + Sync {
     async fn create_outgoing(&mut self) -> Result<S, Box<dyn Error>>;
     async fn recv(&mut self) -> Result<S, Box<dyn Error>>;
 }

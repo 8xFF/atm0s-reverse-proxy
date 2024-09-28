@@ -126,7 +126,14 @@ where
                 let write_buf = copy_buffer.back_mut();
                 if write_buf.len() >= BUFFER_WRITE_MIN {
                     //only write if we have big enough space
-                    match from.as_mut().poll_read(cx, write_buf)? {
+                    match from.as_mut().poll_read(cx, write_buf).map_err(|e| {
+                        log::error!(
+                            "[OneDirectCopy {} => {}] read error {e:?}",
+                            from.name(),
+                            to.name()
+                        );
+                        e
+                    })? {
                         Poll::Ready(0) => {
                             log::info!(
                                 "[OneDirectCopy {} => {}] read finished => lock_write",
@@ -138,7 +145,7 @@ where
                         }
                         Poll::Ready(len) => {
                             copy_buffer.move_back(len);
-                            log::info!(
+                            log::debug!(
                                 "[OneDirectCopy {} => {}] read {len} bytes, current buf {} bytes",
                                 from.name(),
                                 to.name(),
@@ -152,10 +159,17 @@ where
                 let read_buf = copy_buffer.front();
                 if read_buf.len() > 0 {
                     // we have some data to write
-                    match to.as_mut().poll_write(cx, read_buf)? {
+                    match to.as_mut().poll_write(cx, read_buf).map_err(|e| {
+                        log::error!(
+                            "[OneDirectCopy {} => {}] write error {e:?}",
+                            from.name(),
+                            to.name()
+                        );
+                        e
+                    })? {
                         Poll::Ready(len) => {
                             copy_buffer.move_front(len);
-                            log::info!(
+                            log::debug!(
                                 "[OneDirectCopy {} => {}] write {len} bytes, current buf {} bytes",
                                 from.name(),
                                 to.name(),
@@ -178,13 +192,27 @@ where
                 }
             }
             OneDirectState::ShuttingDown(sum) => {
-                ready!(to.as_mut().poll_flush(cx))?;
+                ready!(to.as_mut().poll_flush(cx)).map_err(|e| {
+                    log::error!(
+                        "[OneDirectCopy {} => {}] flush error {e:?}",
+                        from.name(),
+                        to.name()
+                    );
+                    e
+                })?;
                 log::info!(
                     "[OneDirectCopy {} => {}] write finished flush",
                     from.name(),
                     to.name(),
                 );
-                ready!(to.as_mut().poll_close(cx))?;
+                ready!(to.as_mut().poll_close(cx)).map_err(|e| {
+                    log::error!(
+                        "[OneDirectCopy {} => {}] close error {e:?}",
+                        from.name(),
+                        to.name()
+                    );
+                    e
+                })?;
                 log::info!(
                     "[OneDirectCopy {} => {}] write finished close => Done",
                     from.name(),
@@ -219,6 +247,12 @@ impl<
 
         let a_to_b = ready!(res1);
         let b_to_a = ready!(res2);
+
+        log::info!(
+            "[BidirectCopyStream] {} <==> {} finished",
+            this.a.name(),
+            this.b.name()
+        );
 
         Poll::Ready(Ok((a_to_b, b_to_a)))
     }

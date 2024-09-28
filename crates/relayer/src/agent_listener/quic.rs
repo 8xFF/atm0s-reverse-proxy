@@ -5,6 +5,7 @@ use std::{
     net::SocketAddr,
     pin::Pin,
     sync::Arc,
+    task::{Context, Poll},
     time::{Duration, Instant},
 };
 
@@ -12,7 +13,7 @@ use async_std::channel::Receiver;
 use futures::{AsyncRead, AsyncWrite};
 use metrics::histogram;
 use protocol::{key::ClusterValidator, stream::NamedStream};
-use quinn::{Endpoint, RecvStream, SendStream, ServerConfig};
+use quinn::{ConnectionError, Endpoint, RecvStream, SendStream, ServerConfig};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use serde::de::DeserializeOwned;
 
@@ -159,39 +160,38 @@ impl NamedStream for AgentQuicSubConnection {
 
 impl AsyncRead for AgentQuicSubConnection {
     fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
         buf: &mut [u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
+    ) -> Poll<std::io::Result<usize>> {
         let this = self.get_mut();
-        Pin::new(&mut this.recv).poll_read(cx, buf)
+        match this.recv.poll_read(cx, buf) {
+            Poll::Ready(Err(quinn::ReadError::ConnectionLost(
+                ConnectionError::ConnectionClosed(_),
+            ))) => Poll::Ready(Ok(0)),
+            e => e.map_err(|e| e.into()),
+        }
     }
 }
 
 impl AsyncWrite for AgentQuicSubConnection {
     fn poll_write(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
         buf: &[u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
+    ) -> Poll<std::io::Result<usize>> {
         let this = self.get_mut();
         Pin::new(&mut this.send)
             .poll_write(cx, buf)
             .map_err(|e| e.into())
     }
 
-    fn poll_flush(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         let this = self.get_mut();
         Pin::new(&mut this.send).poll_flush(cx)
     }
 
-    fn poll_close(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         let this = self.get_mut();
         Pin::new(&mut this.send).poll_close(cx)
     }
