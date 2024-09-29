@@ -1,6 +1,7 @@
 pub mod cluster;
 pub mod key;
 pub mod services;
+pub mod stream;
 
 pub const DEFAULT_TUNNEL_CERT: &[u8] = include_bytes!("../certs/tunnel.cert");
 pub const DEFAULT_TUNNEL_KEY: &[u8] = include_bytes!("../certs/tunnel.key");

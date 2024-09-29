@@ -5,11 +5,11 @@ use std::{
 
 use async_std::channel::Sender;
 
-use crate::ProxyTunnel;
+use crate::proxy_listener::ProxyTunnelWrap;
 
 pub struct AgentEntry {
     pub conn_id: u64,
-    pub tx: Sender<Box<dyn ProxyTunnel>>,
+    pub tx: Sender<ProxyTunnelWrap>,
 }
 
 #[derive(Clone, Default)]
@@ -19,7 +19,7 @@ pub struct AgentStore {
 }
 
 impl AgentStore {
-    pub fn add(&self, id: u64, conn_id: u64, tx: Sender<Box<dyn ProxyTunnel>>) {
+    pub fn add(&self, id: u64, conn_id: u64, tx: Sender<ProxyTunnelWrap>) {
         if let Some(agent) = self
             .agents
             .write()
@@ -34,7 +34,7 @@ impl AgentStore {
         }
     }
 
-    pub fn get(&self, id: u64) -> Option<Sender<Box<dyn ProxyTunnel>>> {
+    pub fn get(&self, id: u64) -> Option<Sender<ProxyTunnelWrap>> {
         self.agents
             .read()
             .expect("Should write agents")

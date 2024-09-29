@@ -6,7 +6,6 @@ use atm0s_reverse_proxy_agent::{
 };
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 use clap::Parser;
-use futures::{AsyncRead, AsyncWrite};
 use protocol::{services::SERVICE_RTSP, DEFAULT_TUNNEL_CERT};
 use protocol_ed25519::AgentLocalKey;
 use rustls::pki_types::CertificateDer;
@@ -168,13 +167,11 @@ async fn main() {
     }
 }
 
-pub async fn run_connection_loop<S, R, W>(
-    mut connection: impl Connection<S, R, W>,
+pub async fn run_connection_loop<S>(
+    mut connection: impl Connection<S>,
     registry: Arc<dyn ServiceRegistry>,
 ) where
-    S: SubConnection<R, W> + 'static,
-    R: AsyncRead + Send + Unpin + 'static,
-    W: AsyncWrite + Send + Unpin + 'static,
+    S: SubConnection + 'static,
 {
     loop {
         match connection.recv().await {

@@ -6,31 +6,17 @@ use std::{
 };
 
 use async_std::net::TcpStream;
-use futures::io::{ReadHalf, WriteHalf};
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Future};
 use protocol::key::AgentSigner;
 use serde::de::DeserializeOwned;
 use url::Url;
 use yamux::Mode;
 
-use super::{Connection, SubConnection};
+mod sub_conn;
 
-pub struct TcpSubConnection {
-    stream: yamux::Stream,
-}
+use super::Connection;
 
-impl TcpSubConnection {
-    pub fn new(stream: yamux::Stream) -> Self {
-        Self { stream }
-    }
-}
-
-impl SubConnection<ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>> for TcpSubConnection {
-    fn split(self) -> (ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>) {
-        AsyncReadExt::split(self.stream)
-    }
-}
-
+pub use sub_conn::TcpSubConnection;
 pub struct TcpConnection<RES> {
     response: RES,
     conn: yamux::Connection<TcpStream>,
@@ -69,10 +55,7 @@ impl<RES: DeserializeOwned> TcpConnection<RES> {
 }
 
 #[async_trait::async_trait]
-impl<RES: Send + Sync>
-    Connection<TcpSubConnection, ReadHalf<yamux::Stream>, WriteHalf<yamux::Stream>>
-    for TcpConnection<RES>
-{
+impl<RES: Send + Sync> Connection<TcpSubConnection> for TcpConnection<RES> {
     async fn create_outgoing(&mut self) -> Result<TcpSubConnection, Box<dyn Error>> {
         // TODO fix create_sub_connection issue. I don't know why yamux is success full create at agent
         // but relay don't received any connection
@@ -80,7 +63,7 @@ impl<RES: Send + Sync>
             connection: &mut self.conn,
         };
         match mux_client.await {
-            Ok(stream) => Ok(TcpSubConnection::new(stream)),
+            Ok(stream) => Ok(stream.into()),
             Err(e) => Err(e.into()),
         }
     }
@@ -88,7 +71,7 @@ impl<RES: Send + Sync>
     async fn recv(&mut self) -> Result<TcpSubConnection, Box<dyn Error>> {
         let mux_server = YamuxConnectionServer::new(&mut self.conn);
         match mux_server.await {
-            Ok(Some(stream)) => Ok(TcpSubConnection::new(stream)),
+            Ok(Some(stream)) => Ok(stream.into()),
             Ok(None) => Err("yamux server poll next inbound return None".into()),
             Err(e) => Err(e.into()),
         }

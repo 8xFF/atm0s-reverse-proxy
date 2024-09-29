@@ -286,8 +286,8 @@ async fn main() {
     )
     .await;
 
-    let agent_rpc_handler_quic = Arc::new(AgentIncomingConnHandlerDummy::default());
-    let agent_rpc_handler_tcp = Arc::new(AgentIncomingConnHandlerDummy::default());
+    let agent_rpc_handler_quic = AgentIncomingConnHandlerDummy::default();
+    let agent_rpc_handler_tcp = AgentIncomingConnHandlerDummy::default();
 
     loop {
         select! {
