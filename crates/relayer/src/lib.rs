@@ -74,7 +74,10 @@ pub async fn run_agent_connection<AG, S, H>(
     H: AgentConnectionHandler<S> + 'static,
 {
     counter!(METRICS_AGENT_COUNT).increment(1);
-    log::info!("agent_connection.domain(): {}", agent_connection.domain());
+    log::info!(
+        "run_agent_connection domain(): {}",
+        agent_connection.domain()
+    );
     let domain = agent_connection.domain().to_string();
     let conn_id = agent_connection.conn_id();
     let (mut agent_worker, proxy_tunnel_tx) =
@@ -83,24 +86,32 @@ pub async fn run_agent_connection<AG, S, H>(
             agent_rpc_handler,
         );
     let home_id = home_id_from_domain(&domain);
-    log::info!("added home_id: {}, conn_id: {}", home_id, conn_id);
+    log::info!(
+        "run_agent_connection added home_id: {}, conn_id: {}",
+        home_id,
+        conn_id
+    );
     agents.add(home_id, conn_id, proxy_tunnel_tx);
     node_alias_sdk.register_alias(home_id).await;
     let agents = agents.clone();
     gauge!(METRICS_AGENT_LIVE).increment(1.0);
-    log::info!("agent_worker run for domain: {}", domain);
+    log::info!("run_agent_connection run for domain: {}", domain);
     loop {
         match agent_worker.run().await {
-            Ok(()) => {}
+            Ok(Some(())) => {}
+            Ok(None) => {
+                log::info!("run_agent_connection agent_worker closed");
+                break;
+            }
             Err(e) => {
-                log::error!("agent_worker error: {}", e);
+                log::error!("run_agent_connection agent_worker error: {}", e);
                 break;
             }
         }
     }
     let removed = agents.remove(home_id, conn_id);
     log::info!(
-        "remove home_id: {}, conn_id: {}, removed: {}",
+        "run_agent_connection remove home_id: {}, conn_id: {}, removed: {}",
         home_id,
         conn_id,
         removed
@@ -108,6 +119,9 @@ pub async fn run_agent_connection<AG, S, H>(
     if removed {
         node_alias_sdk.unregister_alias(home_id).await;
     }
-    log::info!("agent_worker exit for domain: {}", domain);
+    log::info!(
+        "run_agent_connection agent_worker exit for domain: {}",
+        domain
+    );
     gauge!(METRICS_AGENT_LIVE).decrement(1.0);
 }

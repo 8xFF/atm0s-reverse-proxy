@@ -1,6 +1,5 @@
 use std::{marker::PhantomData, time::Instant};
 
-use anyhow::anyhow;
 use metrics::{counter, gauge, histogram};
 use protocol::cluster::write_buf;
 use tokio::io::copy_bidirectional;
@@ -58,6 +57,7 @@ where
         counter!(METRICS_TUNNEL_AGENT_COUNT).increment(1);
         let started = Instant::now();
         let mut to_agent_conn = self.connection.create_sub_connection().await?;
+        let conn_id = self.connection.conn_id();
 
         tokio::spawn(async move {
             let is_local = proxy_tunnel_conn.local();
@@ -65,7 +65,7 @@ where
             let handshake = proxy_tunnel_conn.handshake();
             let err = write_buf::<_, 1000>(&mut to_agent_conn, handshake).await;
             if let Err(e) = err {
-                log::error!("handshake for domain {domain} failed {:?}", e);
+                log::error!("[AgentWorker {conn_id}] handshake for domain {domain} failed {e:?}");
                 if is_local {
                     gauge!(METRICS_PROXY_HTTP_ERROR_COUNT).increment(1.0);
                 } else {
@@ -82,14 +82,18 @@ where
                 gauge!(METRICS_PROXY_CLUSTER_LIVE).increment(1.0);
             }
             gauge!(METRICS_TUNNEL_AGENT_LIVE).increment(1.0);
-            log::info!("start proxy tunnel for domain {domain}");
+            log::info!("[AgentWorker {conn_id}] start proxy tunnel for domain {domain}");
 
             match copy_bidirectional(&mut proxy_tunnel_conn, &mut to_agent_conn).await {
                 Ok(res) => {
-                    log::info!("end proxy tunnel for domain {domain}, res {res:?}");
+                    log::info!(
+                        "[AgentWorker {conn_id}] end proxy tunnel for domain {domain}, res {res:?}"
+                    );
                 }
                 Err(e) => {
-                    log::error!("end proxy tunnel for domain {domain} err {e:?}");
+                    log::error!(
+                        "[AgentWorker {conn_id}] end proxy tunnel for domain {domain} err {e:?}"
+                    );
                 }
             }
 
@@ -107,40 +111,59 @@ where
         counter!(METRICS_PROXY_AGENT_COUNT).increment(1);
         let handler = self.incoming_conn_handler.clone();
         let domain = self.connection.domain();
+        let conn_id = self.connection.conn_id();
         tokio::spawn(async move {
             gauge!(METRICS_PROXY_AGENT_LIVE).increment(1.0);
-            log::info!("handle agent connection with external logic");
+            log::info!("[AgentWorker {conn_id}] handle agent connection with external logic");
             if let Err(e) = handler.handle(&domain, conn).await {
                 counter!(METRICS_PROXY_AGENT_ERROR_COUNT).increment(1);
-                log::error!("handle agent connection error {:?}", e);
+                log::error!("[AgentWorker {conn_id}] handle agent connection error {e:?}");
             }
             gauge!(METRICS_PROXY_AGENT_LIVE).decrement(1.0);
         });
         Ok(())
     }
 
-    pub async fn run(&mut self) -> anyhow::Result<()> {
+    pub async fn run(&mut self) -> anyhow::Result<Option<()>> {
         let incoming = select! {
-            conn = self.rx.recv() => IncomingConn::FromProxy(conn.ok_or(anyhow!("internal queue error"))?),
+            conn = self.rx.recv() => match conn {
+                Some(conn) => IncomingConn::FromProxy(conn),
+                None => {
+                    log::warn!("[AgentWorker {}] server closed connection", self.connection.conn_id());
+                    return Ok(None);
+                }
+            },
             conn = self.connection.recv() => IncomingConn::FromAgent(conn?),
         };
 
         match incoming {
             IncomingConn::FromProxy(conn) => {
-                log::info!("incoming connect request from proxy");
+                log::info!(
+                    "[AgentWorker {}] incoming connect request from proxy",
+                    self.connection.conn_id()
+                );
                 if let Err(e) = self.handle_proxy_tunnel(conn).await {
-                    log::error!("handle proxy tunnel error {:?}", e);
+                    log::error!(
+                        "[AgentWorker {}] handle proxy tunnel error {e:?}",
+                        self.connection.conn_id()
+                    );
                     counter!(METRICS_TUNNEL_AGENT_ERROR_COUNT).increment(1);
                 }
             }
             IncomingConn::FromAgent(conn) => {
-                log::info!("incoming connect request from client");
+                log::info!(
+                    "[AgentWorker {}] incoming connect request from client",
+                    self.connection.conn_id()
+                );
                 if let Err(e) = self.handle_agent_connection(conn).await {
-                    log::error!("handle agent connection error {:?}", e);
+                    log::error!(
+                        "[AgentWorker {}] handle agent connection error {e:?}",
+                        self.connection.conn_id()
+                    );
                     counter!(METRICS_PROXY_AGENT_ERROR_COUNT).increment(1);
                 }
             }
         }
-        Ok(())
+        Ok(Some(()))
     }
 }
