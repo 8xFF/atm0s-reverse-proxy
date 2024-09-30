@@ -125,7 +125,7 @@ where
             OneDirectState::Running(copy_buffer) => {
                 let write_buf = copy_buffer.back_mut();
                 if write_buf.len() >= BUFFER_WRITE_MIN {
-                    //only write if we have big enough space
+                    // only write if we have big enough space
                     match from.as_mut().poll_read(cx, write_buf).map_err(|e| {
                         log::error!(
                             "[OneDirectCopy {} => {}] read error {e:?}",
@@ -140,7 +140,7 @@ where
                                 from.name(),
                                 to.name()
                             );
-                            //read stream closed => lock write
+                            // read stream closed => lock write
                             copy_buffer.lock_write();
                         }
                         Poll::Ready(len) => {
@@ -152,22 +152,18 @@ where
                                 copy_buffer.front().len()
                             );
                         }
-                        Poll::Pending => {}
+                        Poll::Pending => {
+                            // we don't need to do anything, just move to next sending data
+                        }
                     }
                 }
 
                 let read_buf = copy_buffer.front();
                 if !read_buf.is_empty() {
                     // we have some data to write
-                    match to.as_mut().poll_write(cx, read_buf).map_err(|e| {
-                        log::error!(
-                            "[OneDirectCopy {} => {}] write error {e:?}",
-                            from.name(),
-                            to.name()
-                        );
-                        e
-                    })? {
-                        Poll::Ready(len) => {
+                    let write_res = ready!(to.as_mut().poll_write(cx, read_buf));
+                    match write_res {
+                        Ok(len) => {
                             copy_buffer.move_front(len);
                             log::debug!(
                                 "[OneDirectCopy {} => {}] write {len} bytes, current buf {} bytes",
@@ -176,7 +172,14 @@ where
                                 copy_buffer.front().len()
                             );
                         }
-                        Poll::Pending => {}
+                        Err(e) => {
+                            log::error!(
+                                "[OneDirectCopy {} => {}] write error {e:?}",
+                                from.name(),
+                                to.name()
+                            );
+                            return Poll::Ready(Err(e));
+                        }
                     }
                 } else if copy_buffer.is_lock_write() {
                     // we finish then switch to ShuttingDown
