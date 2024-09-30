@@ -88,19 +88,29 @@ impl ProxyTunnel for ProxyTcpTunnel {
     }
 
     async fn wait(&mut self) -> Option<()> {
-        log::info!("[ProxyTcpTunnel] wait first data for checking url...");
+        log::info!(
+            "[ProxyTcpTunnel {}] wait first data for checking url...",
+            self.stream_addr
+        );
         let mut first_pkt = [0u8; 4096];
         let first_pkt_size = self.stream.peek(&mut first_pkt).await.ok()?;
         log::info!(
-            "[ProxyTcpTunnel] read {} bytes for determine url",
-            first_pkt_size
+            "[ProxyTcpTunnel {}] read {first_pkt_size} bytes for determine url",
+            self.stream_addr
         );
         if first_pkt_size == 0 {
-            log::warn!("[ProxyTcpTunnel] connect close without data");
+            log::warn!(
+                "[ProxyTcpTunnel {}] connect close without data",
+                self.stream_addr
+            );
             return None;
         }
         self.domain = self.detector.get_domain(&first_pkt[..first_pkt_size])?;
-        log::info!("[ProxyTcpTunnel] detected domain {}", self.domain);
+        log::info!(
+            "[ProxyTcpTunnel {}] detected domain {}",
+            self.stream_addr,
+            self.domain
+        );
         self.handshake = (&AgentTunnelRequest {
             service: self.service,
             tls: self.tls,
