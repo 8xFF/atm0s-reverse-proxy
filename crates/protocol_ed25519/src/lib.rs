@@ -67,8 +67,8 @@ impl AgentSigner<RegisterResponse> for AgentLocalKey {
         .to_vec()
     }
 
-    fn validate_connect_res(&self, resp: &[u8]) -> Result<RegisterResponse, String> {
-        bincode::deserialize(resp).map_err(|e| e.to_string())
+    fn validate_connect_res(&self, resp: &[u8]) -> anyhow::Result<RegisterResponse> {
+        Ok(bincode::deserialize(resp)?)
     }
 }
 
@@ -84,16 +84,14 @@ impl ClusterValidatorImpl {
 }
 
 impl ClusterValidator<RegisterRequest> for ClusterValidatorImpl {
-    fn validate_connect_req(&self, req: &[u8]) -> Result<RegisterRequest, String> {
-        let req: RegisterRequest = bincode::deserialize(req).map_err(|e| e.to_string())?;
+    fn validate_connect_req(&self, req: &[u8]) -> anyhow::Result<RegisterRequest> {
+        let req: RegisterRequest = bincode::deserialize(req)?;
         let msg = req.pub_key.to_bytes();
-        req.pub_key
-            .verify(&msg, &req.signature)
-            .map_err(|e| e.to_string())?;
+        req.pub_key.verify(&msg, &req.signature)?;
         Ok(req)
     }
 
-    fn generate_domain(&self, req: &RegisterRequest) -> Result<String, String> {
+    fn generate_domain(&self, req: &RegisterRequest) -> anyhow::Result<String> {
         Ok(format!(
             "{}.{}",
             convert_hex(&req.pub_key.to_bytes()[0..16]),

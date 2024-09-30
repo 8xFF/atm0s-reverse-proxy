@@ -13,6 +13,7 @@ use clap::Parser;
 use protocol::DEFAULT_TUNNEL_CERT;
 use protocol_ed25519::AgentLocalKey;
 use rustls::pki_types::CertificateDer;
+use tokio::time::sleep;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use url::Url;
 
@@ -53,7 +54,7 @@ struct Args {
     connect_wait_ms: u64,
 }
 
-#[async_std::main]
+#[tokio::main]
 async fn main() {
     let args = Args::parse();
     rustls::crypto::ring::default_provider()
@@ -75,14 +76,14 @@ async fn main() {
     for client in 0..args.clients {
         let args_c = args.clone();
         let registry = registry.clone();
-        async_std::task::spawn(async move {
-            async_std::task::spawn_local(connect(client, args_c, registry));
+        tokio::spawn(async move {
+            connect(client, args_c, registry).await;
         });
-        async_std::task::sleep(Duration::from_millis(args.connect_wait_ms)).await;
+        sleep(Duration::from_millis(args.connect_wait_ms)).await;
     }
 
     loop {
-        async_std::task::sleep(Duration::from_millis(1000)).await;
+        sleep(Duration::from_millis(1000)).await;
     }
 }
 
@@ -148,7 +149,7 @@ async fn connect(client: usize, args: Args, registry: Arc<dyn ServiceRegistry>) 
             }
         }
         //TODO exponential backoff
-        async_std::task::sleep(std::time::Duration::from_secs(1)).await;
+        sleep(std::time::Duration::from_secs(1)).await;
     }
 }
 
@@ -163,7 +164,7 @@ async fn run_connection_loop<S>(
             Ok(sub_connection) => {
                 log::info!("recv sub_connection");
                 let registry = registry.clone();
-                async_std::task::spawn_local(run_tunnel_connection(sub_connection, registry));
+                tokio::spawn(run_tunnel_connection(sub_connection, registry));
             }
             Err(e) => {
                 log::error!("recv sub_connection error: {}", e);

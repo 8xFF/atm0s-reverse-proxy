@@ -1,50 +1,48 @@
-use std::{
-    error::Error,
-    net::ToSocketAddrs,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use std::net::ToSocketAddrs;
 
-use async_std::net::TcpStream;
-use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Future};
+use super::{Connection, SubConnection};
+use anyhow::anyhow;
+use futures::prelude::*;
 use protocol::key::AgentSigner;
 use serde::de::DeserializeOwned;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+};
+use tokio_yamux::{Session, StreamHandle};
 use url::Url;
-use yamux::Mode;
 
-mod sub_conn;
+pub type TcpSubConnection = StreamHandle;
 
-use super::Connection;
+impl SubConnection for StreamHandle {}
 
-pub use sub_conn::TcpSubConnection;
 pub struct TcpConnection<RES> {
     response: RES,
-    conn: yamux::Connection<TcpStream>,
+    session: Session<TcpStream>,
 }
 
 impl<RES: DeserializeOwned> TcpConnection<RES> {
-    pub async fn new<AS: AgentSigner<RES>>(
-        url: Url,
-        agent_signer: &AS,
-    ) -> Result<Self, Box<dyn Error>> {
+    pub async fn new<AS: AgentSigner<RES>>(url: Url, agent_signer: &AS) -> anyhow::Result<Self> {
         let url_host = url
             .host_str()
-            .ok_or::<Box<dyn Error>>("couldn't get host from url".into())?;
+            .ok_or(anyhow!("couldn't get host from url"))?;
         let url_port = url.port().unwrap_or(33333);
         log::info!("connecting to server {}:{}", url_host, url_port);
         let remote = (url_host, url_port)
             .to_socket_addrs()?
             .next()
-            .ok_or::<Box<dyn Error>>("couldn't resolve to an address".into())?;
+            .ok_or(anyhow!("couldn't resolve to an address"))?;
 
         let mut stream = TcpStream::connect(remote).await?;
         stream.write_all(&agent_signer.sign_connect_req()).await?;
 
         let mut buf = [0u8; 4096];
         let buf_len = stream.read(&mut buf).await?;
-        let response: RES = agent_signer.validate_connect_res(&buf[..buf_len])?;
+        let response: RES = agent_signer
+            .validate_connect_res(&buf[..buf_len])
+            .map_err(|e| anyhow!("{e}"))?;
         Ok(Self {
-            conn: yamux::Connection::new(stream, Default::default(), Mode::Server),
+            session: Session::new_server(stream, Default::default()),
             response,
         })
     }
@@ -56,73 +54,17 @@ impl<RES: DeserializeOwned> TcpConnection<RES> {
 
 #[async_trait::async_trait]
 impl<RES: Send + Sync> Connection<TcpSubConnection> for TcpConnection<RES> {
-    async fn create_outgoing(&mut self) -> Result<TcpSubConnection, Box<dyn Error>> {
-        // TODO fix create_sub_connection issue. I don't know why yamux is success full create at agent
-        // but relay don't received any connection
-        let mux_client = OpenStreamsClient {
-            connection: &mut self.conn,
-        };
-        match mux_client.await {
-            Ok(stream) => Ok(stream.into()),
-            Err(e) => Err(e.into()),
-        }
+    async fn create_outgoing(&mut self) -> anyhow::Result<TcpSubConnection> {
+        let stream = self.session.open_stream()?;
+        Ok(stream)
     }
 
-    async fn recv(&mut self) -> Result<TcpSubConnection, Box<dyn Error>> {
-        let mux_server = YamuxConnectionServer::new(&mut self.conn);
-        match mux_server.await {
-            Ok(Some(stream)) => Ok(stream.into()),
-            Ok(None) => Err("yamux server poll next inbound return None".into()),
-            Err(e) => Err(e.into()),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct YamuxConnectionServer<'a, T> {
-    connection: &'a mut yamux::Connection<T>,
-}
-
-impl<'a, T> YamuxConnectionServer<'a, T> {
-    pub fn new(connection: &'a mut yamux::Connection<T>) -> Self {
-        Self { connection }
-    }
-}
-
-impl<'a, T> Future for YamuxConnectionServer<'a, T>
-where
-    T: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
-{
-    type Output = yamux::Result<Option<yamux::Stream>>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-        match this.connection.poll_next_inbound(cx)? {
-            Poll::Ready(stream) => {
-                log::info!("YamuxConnectionServer new stream");
-                Poll::Ready(Ok(stream))
-            }
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct OpenStreamsClient<'a, T> {
-    connection: &'a mut yamux::Connection<T>,
-}
-
-impl<'a, T> Future for OpenStreamsClient<'a, T>
-where
-    T: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
-{
-    type Output = yamux::Result<yamux::Stream>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-        match this.connection.poll_new_outbound(cx) {
-            Poll::Ready(stream) => Poll::Ready(stream),
-            Poll::Pending => Poll::Pending,
-        }
+    async fn recv(&mut self) -> anyhow::Result<TcpSubConnection> {
+        let stream = self
+            .session
+            .next()
+            .await
+            .ok_or(anyhow!("accept new connection error"))??;
+        Ok(stream)
     }
 }

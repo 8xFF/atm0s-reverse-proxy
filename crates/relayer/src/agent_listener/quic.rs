@@ -1,21 +1,18 @@
 use std::{
-    error::Error,
     fmt::Debug,
     marker::PhantomData,
     net::SocketAddr,
-    pin::Pin,
     sync::Arc,
-    task::{Context, Poll},
     time::{Duration, Instant},
 };
 
-use async_std::channel::Receiver;
-use futures::{AsyncRead, AsyncWrite};
+use anyhow::anyhow;
 use metrics::histogram;
-use protocol::{key::ClusterValidator, stream::NamedStream};
-use quinn::{ConnectionError, Endpoint, RecvStream, SendStream, ServerConfig};
+use protocol::{key::ClusterValidator, stream::TunnelStream};
+use quinn::{Endpoint, RecvStream, SendStream, ServerConfig};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use serde::de::DeserializeOwned;
+use tokio::sync::mpsc::{channel, Receiver};
 
 use crate::METRICS_AGENT_HISTOGRAM;
 
@@ -26,23 +23,23 @@ pub struct AgentQuicListener<REQ: DeserializeOwned + Debug> {
     _tmp: PhantomData<REQ>,
 }
 
-impl<REQ: DeserializeOwned + Debug> AgentQuicListener<REQ> {
-    pub async fn new<VALIDATE: 'static + ClusterValidator<REQ>>(
+impl<REQ: DeserializeOwned + Send + Sync + Debug> AgentQuicListener<REQ> {
+    pub async fn new<VALIDATE: Send + Sync + 'static + ClusterValidator<REQ>>(
         addr: SocketAddr,
         cluster_validator: VALIDATE,
         priv_key: PrivatePkcs8KeyDer<'static>,
         cert: CertificateDer<'static>,
     ) -> Self {
         log::info!("AgentQuicListener::new {}", addr);
-        let (tx, rx) = async_std::channel::bounded(100);
-        async_std::task::spawn_local(async move {
+        let (tx, rx) = channel(100);
+        tokio::spawn(async move {
             let endpoint =
                 make_server_endpoint(addr, priv_key, cert).expect("Should make server endpoint");
             let cluster_validator = Arc::new(cluster_validator);
             while let Some(incoming_conn) = endpoint.accept().await {
                 let cluster_validator = cluster_validator.clone();
                 let tx = tx.clone();
-                async_std::task::spawn_local(async move {
+                tokio::spawn(async move {
                     log::info!(
                         "[AgentQuicListener] On incoming from {}",
                         incoming_conn.remote_address()
@@ -85,13 +82,13 @@ impl<REQ: DeserializeOwned + Debug> AgentQuicListener<REQ> {
     async fn process_incoming_conn<VALIDATE: ClusterValidator<REQ>>(
         cluster_validator: Arc<VALIDATE>,
         conn: quinn::Connection,
-    ) -> Result<AgentQuicConnection, Box<dyn Error>> {
+    ) -> anyhow::Result<AgentQuicConnection> {
         let (mut send, mut recv) = conn.accept_bi().await?;
         let mut buf = [0u8; 4096];
         let buf_len = recv
             .read(&mut buf)
             .await?
-            .ok_or::<Box<dyn Error>>("No incoming data".into())?;
+            .ok_or(anyhow!("no incoming data"))?;
 
         match cluster_validator.validate_connect_req(&buf[..buf_len]) {
             Ok(request) => match cluster_validator.generate_domain(&request) {
@@ -107,14 +104,15 @@ impl<REQ: DeserializeOwned + Debug> AgentQuicListener<REQ> {
                 }
                 Err(e) => {
                     log::error!("invalid register request {:?}, error {}", request, e);
-                    let res_buf = cluster_validator.sign_response_res(&request, Some(e.clone()));
+                    let res_buf =
+                        cluster_validator.sign_response_res(&request, Some(e.to_string()));
                     send.write_all(&res_buf).await?;
-                    Err(e.into())
+                    Err(anyhow!("{e}"))
                 }
             },
             Err(e) => {
                 log::error!("register request error {:?}", e);
-                Err(e.into())
+                Err(anyhow!("{e}"))
             }
         }
     }
@@ -123,10 +121,14 @@ impl<REQ: DeserializeOwned + Debug> AgentQuicListener<REQ> {
 impl<REQ: DeserializeOwned + Send + Sync + Debug>
     AgentListener<AgentQuicConnection, AgentQuicSubConnection> for AgentQuicListener<REQ>
 {
-    async fn recv(&mut self) -> Result<AgentQuicConnection, Box<dyn Error>> {
-        self.rx.recv().await.map_err(|e| e.into())
+    async fn recv(&mut self) -> anyhow::Result<AgentQuicConnection> {
+        self.rx.recv().await.ok_or(anyhow!("InternalQueueError"))
     }
 }
+
+pub type AgentQuicSubConnection = TunnelStream<RecvStream, SendStream>;
+
+impl AgentSubConnection for AgentQuicSubConnection {}
 
 pub struct AgentQuicConnection {
     domain: String,
@@ -143,69 +145,14 @@ impl AgentConnection<AgentQuicSubConnection> for AgentQuicConnection {
         self.conn_id
     }
 
-    async fn create_sub_connection(&mut self) -> Result<AgentQuicSubConnection, Box<dyn Error>> {
+    async fn create_sub_connection(&mut self) -> anyhow::Result<AgentQuicSubConnection> {
         let (send, recv) = self.conn.open_bi().await?;
-        Ok(AgentQuicSubConnection { send, recv })
+        Ok(AgentQuicSubConnection::new(recv, send))
     }
 
-    async fn recv(&mut self) -> Result<AgentQuicSubConnection, Box<dyn Error>> {
+    async fn recv(&mut self) -> anyhow::Result<AgentQuicSubConnection> {
         let (send, recv) = self.conn.accept_bi().await?;
-        Ok(AgentQuicSubConnection { send, recv })
-    }
-}
-
-pub struct AgentQuicSubConnection {
-    send: SendStream,
-    recv: RecvStream,
-}
-
-impl AgentSubConnection for AgentQuicSubConnection {}
-
-impl NamedStream for AgentQuicSubConnection {
-    fn name(&self) -> &'static str {
-        "agent-quic"
-    }
-}
-
-impl AsyncRead for AgentQuicSubConnection {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<std::io::Result<usize>> {
-        let this = self.get_mut();
-        match this.recv.poll_read(cx, buf) {
-            // TODO refactor
-            // Quinn seems to have some issue with close connection. the Writer side already close but
-            // Reader side only fire bellow error
-            Poll::Ready(Err(quinn::ReadError::ConnectionLost(
-                ConnectionError::ApplicationClosed(_),
-            ))) => Poll::Ready(Ok(0)),
-            e => e.map_err(|e| e.into()),
-        }
-    }
-}
-
-impl AsyncWrite for AgentQuicSubConnection {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<std::io::Result<usize>> {
-        let this = self.get_mut();
-        Pin::new(&mut this.send)
-            .poll_write(cx, buf)
-            .map_err(|e| e.into())
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        let this = self.get_mut();
-        Pin::new(&mut this.send).poll_flush(cx)
-    }
-
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        let this = self.get_mut();
-        Pin::new(&mut this.send).poll_close(cx)
+        Ok(AgentQuicSubConnection::new(recv, send))
     }
 }
 
@@ -213,7 +160,7 @@ fn make_server_endpoint(
     bind_addr: SocketAddr,
     priv_key: PrivatePkcs8KeyDer<'static>,
     cert: CertificateDer<'static>,
-) -> Result<Endpoint, Box<dyn Error>> {
+) -> anyhow::Result<Endpoint> {
     let server_config = configure_server(priv_key, cert)?;
     let endpoint = Endpoint::server(server_config, bind_addr)?;
     Ok(endpoint)
@@ -223,7 +170,7 @@ fn make_server_endpoint(
 fn configure_server(
     priv_key: PrivatePkcs8KeyDer<'static>,
     cert: CertificateDer<'static>,
-) -> Result<ServerConfig, Box<dyn Error>> {
+) -> anyhow::Result<ServerConfig> {
     let cert_chain = vec![cert];
 
     let mut server_config = ServerConfig::with_single_cert(cert_chain, priv_key.into())?;

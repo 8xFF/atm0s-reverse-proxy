@@ -1,12 +1,16 @@
 use std::{
-    net::{Ipv4Addr, Shutdown, SocketAddr},
+    io,
+    net::{Ipv4Addr, SocketAddr},
     pin::Pin,
     sync::Arc,
+    task::{Context, Poll},
 };
 
-use async_std::net::{TcpListener, TcpStream};
-use futures::{AsyncRead, AsyncWrite};
-use protocol::{cluster::AgentTunnelRequest, stream::NamedStream};
+use protocol::cluster::AgentTunnelRequest;
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    net::{TcpListener, TcpStream},
+};
 
 use super::{DomainDetector, ProxyListener, ProxyTunnel};
 
@@ -119,47 +123,30 @@ impl ProxyTunnel for ProxyTcpTunnel {
     }
 }
 
-impl NamedStream for ProxyTcpTunnel {
-    fn name(&self) -> &'static str {
-        "proxy-direct-tcp-tunnel"
-    }
-}
-
 impl AsyncRead for ProxyTcpTunnel {
     fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut [u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
-        let this = self.get_mut();
-        Pin::new(&mut this.stream).poll_read(cx, buf)
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().stream).poll_read(cx, buf)
     }
 }
 
 impl AsyncWrite for ProxyTcpTunnel {
     fn poll_write(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
         buf: &[u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
-        let this = self.get_mut();
-        Pin::new(&mut this.stream).poll_write(cx, buf)
+    ) -> Poll<Result<usize, io::Error>> {
+        Pin::new(&mut self.get_mut().stream).poll_write(cx, buf)
     }
 
-    fn poll_flush(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        let this = self.get_mut();
-        Pin::new(&mut this.stream).poll_flush(cx)
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        Pin::new(&mut self.get_mut().stream).poll_flush(cx)
     }
 
-    fn poll_close(
-        self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        let this = self.get_mut();
-        // We need to call shutdown here, without it the proxy will stuck forever
-        std::task::Poll::Ready(Pin::new(&mut this.stream).shutdown(Shutdown::Write))
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        Pin::new(&mut self.get_mut().stream).poll_shutdown(cx)
     }
 }

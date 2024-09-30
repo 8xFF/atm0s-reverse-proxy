@@ -1,12 +1,26 @@
 use rustls::{client::danger::ServerCertVerifier, pki_types::CertificateDer};
-use std::{error::Error, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
+use thiserror::Error;
 
-use quinn::{crypto::rustls::QuicClientConfig, ClientConfig, TransportConfig};
+use quinn::{
+    crypto::rustls::{NoInitialCipherSuite, QuicClientConfig},
+    ClientConfig, TransportConfig,
+};
+
+#[derive(Debug, Error)]
+pub enum QuicTlsError {
+    #[error("NoInitialCipherSuite")]
+    NoInitialCipherSuite(#[from] NoInitialCipherSuite),
+    #[error("Rustls")]
+    Rustls(#[from] rustls::Error),
+    #[error("VerifierBuilderError")]
+    VerifierBuilderError(#[from] rustls::client::VerifierBuilderError),
+}
 
 pub fn configure_client(
     server_certs: &[CertificateDer],
     allow_quic_insecure: bool,
-) -> Result<ClientConfig, Box<dyn Error>> {
+) -> Result<ClientConfig, QuicTlsError> {
     let mut config = if allow_quic_insecure {
         let provider = rustls::crypto::CryptoProvider::get_default().unwrap();
         ClientConfig::new(Arc::new(QuicClientConfig::try_from(

@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use protocol::{
-    cluster::{wait_object, AgentTunnelRequest},
-    stream::pipeline_streams,
-};
+use protocol::cluster::{wait_object, AgentTunnelRequest};
 
 mod connection;
 mod local_tunnel;
@@ -13,9 +10,8 @@ pub use connection::{
     tcp::{TcpConnection, TcpSubConnection},
     Connection, Protocol, SubConnection,
 };
-pub use local_tunnel::{
-    registry::SimpleServiceRegistry, tcp::LocalTcpTunnel, LocalTunnel, ServiceRegistry,
-};
+pub use local_tunnel::{registry::SimpleServiceRegistry, LocalTunnel, ServiceRegistry};
+use tokio::{io::copy_bidirectional, net::TcpStream};
 
 pub async fn run_tunnel_connection<S>(
     mut incoming_proxy_conn: S,
@@ -38,7 +34,7 @@ pub async fn run_tunnel_connection<S>(
                     registry.dest_for(handshake.tls, handshake.service, &handshake.domain)
                 {
                     log::info!("create tunnel to dest {}", dest);
-                    LocalTcpTunnel::connect(dest).await
+                    TcpStream::connect(dest).await
                 } else {
                     log::warn!(
                         "dest for service {:?} tls {} domain {} not found",
@@ -55,7 +51,7 @@ pub async fn run_tunnel_connection<S>(
             }
         };
 
-    let local_tunnel = match local_tunnel {
+    let mut local_tunnel = match local_tunnel {
         Ok(local_tunnel) => local_tunnel,
         Err(e) => {
             log::error!("create local_tunnel error: {}", e);
@@ -65,7 +61,7 @@ pub async fn run_tunnel_connection<S>(
 
     log::info!("sub_connection pipe to local_tunnel start");
 
-    match pipeline_streams(incoming_proxy_conn, local_tunnel).await {
+    match copy_bidirectional(&mut incoming_proxy_conn, &mut local_tunnel).await {
         Ok(res) => {
             log::info!("sub_connection pipe to local_tunnel stop res {res:?}");
         }

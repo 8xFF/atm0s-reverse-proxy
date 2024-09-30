@@ -1,18 +1,19 @@
+use anyhow::anyhow;
 use helper::configure_client;
-use protocol::key::AgentSigner;
+use protocol::{key::AgentSigner, stream::TunnelStream};
 use rustls::pki_types::CertificateDer;
 use serde::de::DeserializeOwned;
-use std::{error::Error, net::ToSocketAddrs};
+use std::net::ToSocketAddrs;
 use url::Url;
 
-use quinn::Endpoint;
+use quinn::{Endpoint, RecvStream, SendStream};
 
 mod helper;
-mod sub_conn;
 
 use super::Connection;
 
-pub use sub_conn::QuicSubConnection;
+pub type QuicSubConnection = TunnelStream<RecvStream, SendStream>;
+
 pub struct QuicConnection<RES> {
     response: RES,
     connection: quinn::Connection,
@@ -24,16 +25,14 @@ impl<RES: DeserializeOwned> QuicConnection<RES> {
         agent_signer: &AS,
         server_certs: &[CertificateDer<'static>],
         allow_quic_insecure: bool,
-    ) -> Result<Self, Box<dyn Error>> {
-        let url_host = url
-            .host_str()
-            .ok_or::<Box<dyn Error>>("couldn't get host from url".into())?;
+    ) -> anyhow::Result<Self> {
+        let url_host = url.host_str().ok_or(anyhow!("InvalidUrl"))?;
         let url_port = url.port().unwrap_or(33333);
         log::info!("connecting to server {}:{}", url_host, url_port);
         let remote = (url_host, url_port)
             .to_socket_addrs()?
             .next()
-            .ok_or::<Box<dyn Error>>("couldn't resolve to an address".into())?;
+            .ok_or(anyhow!("DnsError"))?;
 
         let mut endpoint = Endpoint::client("0.0.0.0:0".parse().expect(""))?;
         endpoint.set_default_client_config(configure_client(server_certs, allow_quic_insecure)?);
@@ -50,11 +49,10 @@ impl<RES: DeserializeOwned> QuicConnection<RES> {
             .await?;
 
         let mut buf = [0u8; 4096];
-        let buf_len = recv_stream
-            .read(&mut buf)
-            .await?
-            .ok_or::<Box<dyn Error>>("read register response error".into())?;
-        let response: RES = agent_signer.validate_connect_res(&buf[..buf_len])?;
+        let buf_len = recv_stream.read(&mut buf).await?.ok_or(anyhow!("NoData"))?;
+        let response: RES = agent_signer
+            .validate_connect_res(&buf[..buf_len])
+            .map_err(|e| anyhow!("validate connect rest error {e}"))?;
         Ok(Self {
             connection,
             response,
@@ -68,13 +66,13 @@ impl<RES: DeserializeOwned> QuicConnection<RES> {
 
 #[async_trait::async_trait]
 impl<RES: Send + Sync> Connection<QuicSubConnection> for QuicConnection<RES> {
-    async fn create_outgoing(&mut self) -> Result<QuicSubConnection, Box<dyn Error>> {
+    async fn create_outgoing(&mut self) -> anyhow::Result<QuicSubConnection> {
         let (send, recv) = self.connection.open_bi().await?;
-        Ok(QuicSubConnection::new(send, recv))
+        Ok(QuicSubConnection::new(recv, send))
     }
 
-    async fn recv(&mut self) -> Result<QuicSubConnection, Box<dyn Error>> {
+    async fn recv(&mut self) -> anyhow::Result<QuicSubConnection> {
         let (send, recv) = self.connection.accept_bi().await?;
-        Ok(QuicSubConnection::new(send, recv))
+        Ok(QuicSubConnection::new(recv, send))
     }
 }

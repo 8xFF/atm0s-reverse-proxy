@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use async_std::channel::{Receiver, Sender};
 use atm0s_sdn::NodeId;
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 enum AliasSdkEvent {
     Register(u64),
@@ -17,13 +17,13 @@ pub struct AliasSdk {
 impl AliasSdk {
     pub async fn find_alias(&self, alias: u64) -> Option<NodeId> {
         log::info!("Querying alias: {}", alias);
-        let (tx, rx) = async_std::channel::bounded(1);
+        let (tx, mut rx) = channel(1);
         self.requester
             .send(AliasSdkEvent::Query(alias, tx))
             .await
             .ok()?;
         log::info!("Sent request for query alias: {}", alias);
-        rx.recv().await.ok().flatten()
+        rx.recv().await.flatten()
     }
 
     pub async fn register_alias(&self, alias: u64) {
@@ -53,7 +53,7 @@ pub struct AliasAsync {
 
 impl AliasAsync {
     pub fn new() -> (Self, AliasSdk) {
-        let (tx, rx) = async_std::channel::bounded(100);
+        let (tx, rx) = channel(100);
         (
             Self {
                 rx,

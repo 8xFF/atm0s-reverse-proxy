@@ -8,12 +8,11 @@ use std::{
     task::{Context, Poll},
 };
 
-use async_std::channel::{Receiver, Sender};
-use futures::StreamExt;
 use quinn::{
     udp::{EcnCodepoint, RecvMeta, Transmit},
     AsyncUdpSocket, UdpPoller,
 };
+use tokio::sync::mpsc::{Receiver, Sender, UnboundedSender};
 
 use super::vnet::{NetworkPkt, OutEvent};
 
@@ -32,7 +31,7 @@ pub struct VirtualUdpSocket {
     addr: SocketAddr,
     rx: Mutex<Receiver<NetworkPkt>>,
     tx: Sender<OutEvent>,
-    close_socket_tx: Sender<u16>,
+    close_socket_tx: UnboundedSender<u16>,
 }
 
 impl VirtualUdpSocket {
@@ -41,7 +40,7 @@ impl VirtualUdpSocket {
         port: u16,
         tx: Sender<OutEvent>,
         rx: Receiver<NetworkPkt>,
-        close_socket_tx: Sender<u16>,
+        close_socket_tx: UnboundedSender<u16>,
     ) -> Self {
         Self {
             port,
@@ -75,7 +74,7 @@ impl AsyncUdpSocket for VirtualUdpSocket {
                     meta: transmit.ecn.map(|x| x as u8).unwrap_or(0),
                 };
                 log::debug!("{} sending {} bytes to {}", self.addr, pkt.data.len(), addr);
-                if !self.tx.is_full() && self.tx.try_send(OutEvent::Pkt(pkt)).is_ok() {
+                if self.tx.try_send(OutEvent::Pkt(pkt)).is_ok() {
                     Ok(())
                 } else {
                     //Err(std::io::ErrorKind::WouldBlock.into())
@@ -94,7 +93,7 @@ impl AsyncUdpSocket for VirtualUdpSocket {
         meta: &mut [RecvMeta],
     ) -> Poll<std::io::Result<usize>> {
         let mut rx = self.rx.lock().expect("Should lock mutex");
-        match rx.poll_next_unpin(cx) {
+        match rx.poll_recv(cx) {
             std::task::Poll::Pending => std::task::Poll::Pending,
             std::task::Poll::Ready(Some(pkt)) => {
                 let len = pkt.data.len();
@@ -138,7 +137,7 @@ impl AsyncUdpSocket for VirtualUdpSocket {
 
 impl Drop for VirtualUdpSocket {
     fn drop(&mut self) {
-        if let Err(e) = self.close_socket_tx.try_send(self.port) {
+        if let Err(e) = self.close_socket_tx.send(self.port) {
             log::error!("Failed to send close socket: {:?}", e);
         }
     }

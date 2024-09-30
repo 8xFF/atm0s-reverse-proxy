@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use async_std::channel::Sender;
+use tokio::sync::mpsc::Sender;
 
 use crate::proxy_listener::ProxyTunnelWrap;
 
@@ -30,7 +30,6 @@ impl AgentStore {
                 "add new connection for agent {id}, old connection {} will deactivate",
                 agent.conn_id
             );
-            agent.tx.close();
         }
     }
 
