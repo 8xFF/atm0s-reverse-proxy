@@ -19,7 +19,7 @@ bincode = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 protocol = { path = "../protocol", package = "atm0s-reverse-proxy-protocol", version = "0.2.0" }
 protocol-ed25519 = { path = "../protocol_ed25519", package = "atm0s-reverse-proxy-protocol-ed25519", optional = true, version = "0.1.2" }
-quinn = { workspace = true, features = ["ring", "runtime-async-std", "futures-io"] }
+quinn = { workspace = true, features = ["ring", "runtime-tokio", "futures-io"] }
 rustls = { workspace = true, features = ["ring", "std"] }
 url = { workspace = true }
 base64 = { workspace = true }
