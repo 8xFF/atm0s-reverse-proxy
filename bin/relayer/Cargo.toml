@@ -6,8 +6,8 @@ description = "Server for atm0s-reverse proxy cluster"
 license = "MIT"
 
 [dependencies]
-protocol = { path = "../protocol", package = "atm0s-reverse-proxy-protocol", version = "0.2.1" }
-protocol-ed25519 = { path = "../protocol_ed25519", package = "atm0s-reverse-proxy-protocol-ed25519", optional = true, version = "0.1.3" }
+protocol = { workspace = true }
+protocol-ed25519 = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["full"] }
 async-trait = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"], optional = true }

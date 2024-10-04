@@ -1,4 +1,4 @@
-cargo run -- \
+RUST_LOG=info cargo run -- \
     --api-port 10001 \
     --http-port 11001 \
     --https-port 12001 \

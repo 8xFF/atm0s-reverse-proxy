@@ -2,10 +2,15 @@
 resolver = "2"
 
 members = [
+    "bin/agent",
+    "bin/relayer-quic",
     "crates/*",
 ]
 
 [workspace.dependencies]
+protocol = { path = "crates/protocol", package = "atm0s-reverse-proxy-protocol", version = "0.2.1" }
+protocol-ed25519 = { path = "crates/protocol_ed25519", package = "atm0s-reverse-proxy-protocol-ed25519", version = "0.1.3" }
+
 log = "0.4"
 tokio-yamux = "0.3"
 clap = "4.4"
