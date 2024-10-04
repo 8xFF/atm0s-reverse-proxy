@@ -29,7 +29,8 @@ derive_more = { workspace = true, features = ["from"] }
 rand = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
-futures = { version = "0.3" }
+futures = { workspace = true }
+parking_lot = { workspace = true }
 
 [features]
 default = ["binary"]

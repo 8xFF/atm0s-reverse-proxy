@@ -1,7 +1,5 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-};
+use parking_lot::RwLock;
+use std::{collections::HashMap, sync::Arc};
 
 use tokio::sync::mpsc::Sender;
 
@@ -20,12 +18,7 @@ pub struct AgentStore {
 
 impl AgentStore {
     pub fn add(&self, id: u64, conn_id: u64, tx: Sender<ProxyTunnelWrap>) {
-        if let Some(agent) = self
-            .agents
-            .write()
-            .expect("Should write agents")
-            .insert(id, AgentEntry { tx, conn_id })
-        {
+        if let Some(agent) = self.agents.write().insert(id, AgentEntry { tx, conn_id }) {
             log::warn!(
                 "add new connection for agent {id}, old connection {} will deactivate",
                 agent.conn_id
@@ -34,15 +27,11 @@ impl AgentStore {
     }
 
     pub fn get(&self, id: u64) -> Option<Sender<ProxyTunnelWrap>> {
-        self.agents
-            .read()
-            .expect("Should write agents")
-            .get(&id)
-            .map(|entry| entry.tx.clone())
+        self.agents.read().get(&id).map(|entry| entry.tx.clone())
     }
 
     pub fn remove(&self, id: u64, conn_id: u64) -> bool {
-        let mut storage = self.agents.write().expect("Should write agents");
+        let mut storage = self.agents.write();
 
         let current = storage.get(&id);
         if let Some(entry) = current {
