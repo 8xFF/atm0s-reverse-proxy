@@ -1,14 +1,16 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use protocol::stream::TunnelStream;
-use quinn::{Endpoint, RecvStream, SendStream, ServerConfig};
+use quinn::{ClientConfig, Endpoint, RecvStream, SendStream, ServerConfig, TransportConfig};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 
 pub type TunnelQuicStream = TunnelStream<RecvStream, SendStream>;
 
 pub fn make_server_endpoint(bind_addr: SocketAddr, priv_key: PrivatePkcs8KeyDer<'static>, cert: CertificateDer<'static>) -> anyhow::Result<Endpoint> {
-    let server_config = configure_server(priv_key, cert)?;
-    let endpoint = Endpoint::server(server_config, bind_addr)?;
+    let server_config = configure_server(priv_key, cert.clone())?;
+    let client_config = configure_client(&[cert])?;
+    let mut endpoint = Endpoint::server(server_config, bind_addr)?;
+    endpoint.set_default_client_config(client_config);
     Ok(endpoint)
 }
 
@@ -22,4 +24,18 @@ fn configure_server(priv_key: PrivatePkcs8KeyDer<'static>, cert: CertificateDer<
     transport_config.max_idle_timeout(Some(Duration::from_secs(30).try_into().expect("Should config timeout")));
 
     Ok(server_config)
+}
+
+fn configure_client(server_certs: &[CertificateDer]) -> anyhow::Result<ClientConfig> {
+    let mut certs = rustls::RootCertStore::empty();
+    for cert in server_certs {
+        certs.add(cert.clone())?;
+    }
+    let mut config = ClientConfig::with_root_certificates(Arc::new(certs))?;
+
+    let mut transport = TransportConfig::default();
+    transport.keep_alive_interval(Some(Duration::from_secs(15)));
+    transport.max_idle_timeout(Some(Duration::from_secs(30).try_into().expect("Should config timeout")));
+    config.transport_config(Arc::new(transport));
+    Ok(config)
 }

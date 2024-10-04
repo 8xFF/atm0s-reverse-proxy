@@ -2,7 +2,7 @@ use std::{marker::PhantomData, net::SocketAddr, sync::Arc};
 
 use anyhow::anyhow;
 use protocol::{key::ClusterValidator, stream::TunnelStream};
-use quinn::{Endpoint, Incoming};
+use quinn::{Endpoint, Incoming, VarInt};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use serde::de::DeserializeOwned;
 use tokio::{
@@ -50,6 +50,10 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
                 event = self.internal_rx.recv() => break Ok(event.expect("should work")),
             }
         }
+    }
+
+    async fn shutdown(&mut self) {
+        self.endpoint.close(VarInt::from_u32(0), "Shutdown".as_bytes());
     }
 }
 

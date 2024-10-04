@@ -1,3 +1,4 @@
+pub mod bincode_stream;
 pub mod cluster;
 pub mod key;
 pub mod services;

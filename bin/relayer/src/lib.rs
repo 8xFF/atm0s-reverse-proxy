@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr};
+use std::{collections::HashMap, net::SocketAddr, time::Duration};
 
 use agent::{
     quic::AgentQuicListener,
@@ -6,24 +6,26 @@ use agent::{
     AgentId, AgentListener, AgentListenerEvent, AgentSession, AgentSessionId,
 };
 use anyhow::{anyhow, Ok};
+use p2p::{P2pNetwork, P2pNetworkRequester};
 use protocol::key::ClusterValidator;
 use proxy::{http::HttpDestinationDetector, rtsp::RtspDestinationDetector, tls::TlsDestinationDetector, ProxyDestination, ProxyTcpListener};
 use quic::TunnelQuicStream;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
-use sdn::{NodeId, UnstructedSdn, UnstrutedSdnRequester};
 use serde::de::DeserializeOwned;
 use tokio::{
     io::{copy_bidirectional, AsyncRead, AsyncWrite},
     select,
+    time::Interval,
 };
 
 mod agent;
+mod p2p;
 mod proxy;
 mod quic;
-mod sdn;
+
+pub use p2p::NodeAddress;
 
 pub struct QuicRelayerConfig {
-    pub node: NodeId,
     pub agent_listener: SocketAddr,
     pub sdn_listener: SocketAddr,
     pub proxy_http_listener: SocketAddr,
@@ -34,6 +36,7 @@ pub struct QuicRelayerConfig {
     pub agent_key: PrivatePkcs8KeyDer<'static>,
     pub agent_cert: CertificateDer<'static>,
 
+    pub sdn_seeds: Vec<NodeAddress>,
     pub sdn_key: PrivatePkcs8KeyDer<'static>,
     pub sdn_cert: CertificateDer<'static>,
 }
@@ -45,10 +48,14 @@ pub struct QuicRelayer<VALIDATE, REQ> {
     tls_proxy: ProxyTcpListener<TlsDestinationDetector>,
     rtsp_proxy: ProxyTcpListener<RtspDestinationDetector>,
     rtsps_proxy: ProxyTcpListener<TlsDestinationDetector>,
-    sdn: UnstructedSdn,
+
+    sdn: P2pNetwork,
+    sdn_seeds: Vec<NodeAddress>,
 
     agent_quic_sessions: HashMap<AgentId, HashMap<AgentSessionId, AgentSession<TunnelQuicStream>>>,
     agent_tcp_sessions: HashMap<AgentId, HashMap<AgentSessionId, AgentSession<TunnelTcpStream>>>,
+
+    ticker: Interval,
 }
 
 impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'static> QuicRelayer<VALIDATE, REQ> {
@@ -60,10 +67,14 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
             tls_proxy: ProxyTcpListener::new(cfg.proxy_tls_listener, Default::default()).await?,
             rtsp_proxy: ProxyTcpListener::new(cfg.proxy_rtsp_listener, Default::default()).await?,
             rtsps_proxy: ProxyTcpListener::new(cfg.proxy_rtsps_listener, Default::default()).await?,
-            sdn: UnstructedSdn::new(cfg.node, cfg.sdn_listener, cfg.sdn_key, cfg.sdn_cert).await?,
+
+            sdn: P2pNetwork::new(cfg.sdn_listener, cfg.sdn_key, cfg.sdn_cert).await?,
+            sdn_seeds: cfg.sdn_seeds,
 
             agent_quic_sessions: HashMap::new(),
             agent_tcp_sessions: HashMap::new(),
+
+            ticker: tokio::time::interval(Duration::from_secs(5)),
         })
     }
 
@@ -81,8 +92,24 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
         }
     }
 
+    fn process_tick(&mut self) {
+        let seeds = self.sdn_seeds.clone();
+        let sdn_requester = self.sdn.requester();
+        tokio::spawn(async move {
+            for seed in seeds {
+                if let Err(e) = sdn_requester.connect(seed).await {
+                    log::error!("[QuicRelayer] connect to {seed} error {e}");
+                }
+            }
+        });
+    }
+
     pub async fn recv(&mut self) -> anyhow::Result<()> {
         select! {
+            _ = self.ticker.tick() => {
+                self.process_tick();
+                Ok(())
+            },
             tunnel = self.http_proxy.recv() => {
                 let (dest, tunnel) = tunnel?;
                 self.process_proxy(tunnel, dest);
@@ -150,6 +177,14 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
                     }
                     Ok(())
                 },
+            },
+            _ = tokio::signal::ctrl_c() => {
+                log::info!("[QuicRelayer] shutdown inprogress");
+                self.sdn.shutdown();
+                self.agent_quic.shutdown().await;
+
+                log::info!("[QuicRelayer] shutdown done");
+                Ok(())
             }
         }
     }
@@ -166,7 +201,7 @@ async fn proxy_local<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static, 
     Ok(())
 }
 
-async fn proxy_cluster<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(mut proxy: T, dest: ProxyDestination, sdn_requester: UnstrutedSdnRequester) -> anyhow::Result<()> {
+async fn proxy_cluster<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(mut proxy: T, dest: ProxyDestination, sdn_requester: P2pNetworkRequester) -> anyhow::Result<()> {
     let agent_id = dest.agent_id();
     let dest_node = sdn_requester.find_alias(*agent_id).await?.ok_or(anyhow!("ALIAS_NOT_FOUND"))?;
     let mut stream = sdn_requester.create_stream_to(dest_node).await?;

@@ -22,4 +22,6 @@ impl AgentListener<TunnelTcpStream> for AgentTcpListener {
         let _stream = self.listener.accept().await?;
         todo!()
     }
+
+    async fn shutdown(&mut self) {}
 }

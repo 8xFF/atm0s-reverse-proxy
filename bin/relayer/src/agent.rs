@@ -62,6 +62,7 @@ pub enum AgentListenerEvent<S> {
 
 pub trait AgentListener<S: AsyncRead + AsyncWrite> {
     async fn recv(&mut self) -> anyhow::Result<AgentListenerEvent<S>>;
+    async fn shutdown(&mut self);
 }
 
 impl<S: AsyncRead + AsyncWrite + Send + Sync + 'static> AgentSession<S> {

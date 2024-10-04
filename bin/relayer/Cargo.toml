@@ -20,6 +20,8 @@ log = { workspace = true }
 serde = { workspace = true }
 rand = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "std"] }
+tokio-util = { workspace = true }
+futures = { workspace = true }
 
 [features]
 default = ["binary"]
