@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-agent-v0.1.2...atm0s-reverse-proxy-agent-v0.2.0) - 2024-10-04
+
+### Fixed
+
+- tunnel stuck ([#63](https://github.com/8xFF/atm0s-reverse-proxy/pull/63))
+
+### Other
+
+- switched to tokio ([#66](https://github.com/8xFF/atm0s-reverse-proxy/pull/66))
+
 ## [0.1.2](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-agent-v0.1.1...atm0s-reverse-proxy-agent-v0.1.2) - 2024-09-23
 
 ### Fixed
