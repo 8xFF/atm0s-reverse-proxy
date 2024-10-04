@@ -1,8 +1,5 @@
-use quinn::{
-    AsyncStdRuntime, ClientConfig, Endpoint, EndpointConfig, ServerConfig, TransportConfig,
-};
+use quinn::{ClientConfig, Endpoint, EndpointConfig, ServerConfig, TokioRuntime, TransportConfig};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
-use std::error::Error;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,9 +9,9 @@ pub fn make_quinn_server(
     socket: VirtualUdpSocket,
     priv_key: PrivatePkcs8KeyDer<'static>,
     cert: CertificateDer<'static>,
-) -> Result<Endpoint, Box<dyn Error>> {
+) -> anyhow::Result<Endpoint> {
     let server_config = configure_server(priv_key, cert)?;
-    let runtime = Arc::new(AsyncStdRuntime);
+    let runtime = Arc::new(TokioRuntime);
     let mut config = EndpointConfig::default();
     config
         .max_udp_payload_size(1500)
@@ -26,8 +23,8 @@ pub fn make_quinn_server(
 pub fn make_quinn_client(
     socket: VirtualUdpSocket,
     server_certs: &[CertificateDer],
-) -> Result<Endpoint, Box<dyn Error>> {
-    let runtime = Arc::new(AsyncStdRuntime);
+) -> anyhow::Result<Endpoint> {
+    let runtime = Arc::new(TokioRuntime);
     let mut config = EndpointConfig::default();
     //Note that client mtu size should be smaller than server's
     config
@@ -42,7 +39,7 @@ pub fn make_quinn_client(
 fn configure_server(
     priv_key: PrivatePkcs8KeyDer<'static>,
     cert: CertificateDer<'static>,
-) -> Result<ServerConfig, Box<dyn Error>> {
+) -> anyhow::Result<ServerConfig> {
     let cert_chain = vec![cert];
 
     let mut server_config = ServerConfig::with_single_cert(cert_chain, priv_key.into())?;
@@ -52,7 +49,7 @@ fn configure_server(
     Ok(server_config)
 }
 
-fn configure_client(server_certs: &[CertificateDer]) -> Result<ClientConfig, Box<dyn Error>> {
+fn configure_client(server_certs: &[CertificateDer]) -> anyhow::Result<ClientConfig> {
     let mut certs = rustls::RootCertStore::empty();
     for cert in server_certs {
         certs.add(cert.clone())?;

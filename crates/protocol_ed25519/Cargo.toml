@@ -13,3 +13,4 @@ ed25519-dalek = { workspace = true, features = ["rand_core", "serde", "pkcs8", "
 rand = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 protocol = { path = "../protocol", package = "atm0s-reverse-proxy-protocol", version = "0.2.0" }
+anyhow = { workspace = true }

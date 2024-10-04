@@ -9,6 +9,7 @@ use clap::Parser;
 use protocol::{services::SERVICE_RTSP, DEFAULT_TUNNEL_CERT};
 use protocol_ed25519::AgentLocalKey;
 use rustls::pki_types::CertificateDer;
+use tokio::time::sleep;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use url::Url;
 
@@ -56,7 +57,7 @@ struct Args {
     allow_quic_insecure: bool,
 }
 
-#[async_std::main]
+#[tokio::main]
 async fn main() {
     let args = Args::parse();
 
@@ -163,7 +164,7 @@ async fn main() {
             }
         }
         //TODO exponential backoff
-        async_std::task::sleep(std::time::Duration::from_secs(1)).await;
+        sleep(std::time::Duration::from_secs(1)).await;
     }
 }
 
@@ -178,7 +179,7 @@ pub async fn run_connection_loop<S>(
             Ok(sub_connection) => {
                 log::info!("recv sub_connection");
                 let registry = registry.clone();
-                async_std::task::spawn_local(run_tunnel_connection(sub_connection, registry));
+                tokio::spawn(run_tunnel_connection(sub_connection, registry));
             }
             Err(e) => {
                 log::error!("recv sub_connection error: {}", e);

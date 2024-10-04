@@ -8,26 +8,28 @@ license = "MIT"
 [dependencies]
 protocol = { path = "../protocol", package = "atm0s-reverse-proxy-protocol", version = "0.2.0" }
 protocol-ed25519 = { path = "../protocol_ed25519", package = "atm0s-reverse-proxy-protocol-ed25519", optional = true, version = "0.1.2" }
-async-std = { version = "1.12.0", features = ["default", "attributes", "unstable", "tokio1"] }
+tokio = { workspace = true, features = ["full"] }
 async-trait = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"], optional = true }
-futures = { workspace = true }
 httparse = { workspace = true }
 log = { workspace = true }
 tls-parser = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "std"] }
-yamux = { workspace = true }
+tokio-yamux = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 metrics-dashboard = { workspace = true, features = ["system"], optional = true }
 poem = { workspace = true, optional = true }
 metrics = { workspace = true }
-quinn = { workspace = true, features = ["ring", "runtime-async-std", "futures-io"] }
+quinn = { workspace = true, features = ["ring", "runtime-tokio", "futures-io"] }
 rustls = { workspace = true, features = ["ring", "std"] }
 atm0s-sdn = { workspace = true }
 rtsp-types = { workspace = true }
 local-ip-address = { workspace = true }
 derive_more = { workspace = true, features = ["from"] }
 rand = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+futures = { version = "0.3" }
 
 [features]
 default = ["binary"]

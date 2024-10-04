@@ -90,7 +90,7 @@ struct Args {
     sdn_workers: usize,
 }
 
-#[async_std::main]
+#[tokio::main]
 async fn main() {
     let default_tunnel_cert = CertificateDer::from(DEFAULT_TUNNEL_CERT.to_vec());
     let default_tunnel_key = PrivatePkcs8KeyDer::from(DEFAULT_TUNNEL_KEY.to_vec());
@@ -247,7 +247,7 @@ async fn main() {
     #[cfg(feature = "expose-metrics")]
     let api_port = args.api_port;
     #[cfg(feature = "expose-metrics")]
-    async_std::task::spawn(async move {
+    tokio::spawn(async move {
         log::warn!("Started api server");
         let addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, api_port);
         let _ = Server::new(TcpListener::bind(SocketAddr::V4(addr)))
@@ -296,7 +296,7 @@ async fn main() {
                     let agents1 = agents.clone();
                     let alias_sdk1 = alias_sdk.clone();
                     let agent_rpc_handler_quic1 = agent_rpc_handler_quic.clone();
-                    async_std::task::spawn(async move {
+                    tokio::spawn(async move {
                         run_agent_connection(agent_connection, agents1, alias_sdk1, agent_rpc_handler_quic1).await;
                     });
                 }
@@ -310,7 +310,7 @@ async fn main() {
                     let agents1 = agents.clone();
                     let alias_sdk1 = alias_sdk.clone();
                     let agent_rpc_handler_tcp1 = agent_rpc_handler_tcp.clone();
-                    async_std::task::spawn(async move {
+                    tokio::spawn(async move {
                         run_agent_connection(agent_connection, agents1, alias_sdk1, agent_rpc_handler_tcp1).await;
                     });
                 }
@@ -322,7 +322,7 @@ async fn main() {
             e = proxy_http_listener.recv().fuse() => match e {
                 Some(proxy_tunnel) => {
                     if let Some(socket) = virtual_net.udp_socket(0).await {
-                        async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket, vec![default_cluster_cert.clone()])));
+                        tokio::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket, vec![default_cluster_cert.clone()])));
                     } else {
                         log::error!("Virtual Net create socket error");
                     }
@@ -335,7 +335,7 @@ async fn main() {
             e = proxy_tls_listener.recv().fuse() => match e {
                 Some(proxy_tunnel) => {
                     if let Some(socket) = virtual_net.udp_socket(0).await {
-                        async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket, vec![default_cluster_cert.clone()])));
+                        tokio::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket, vec![default_cluster_cert.clone()])));
                     } else {
                         log::error!("Virtual Net create socket error");
                     }
@@ -348,7 +348,7 @@ async fn main() {
             e = proxy_rtsps_listener.recv().fuse() => match e {
                 Some(proxy_tunnel) => {
                     if let Some(socket) = virtual_net.udp_socket(0).await {
-                        async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket, vec![default_cluster_cert.clone()])));
+                        tokio::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket, vec![default_cluster_cert.clone()])));
                     } else {
                         log::error!("Virtual Net create socket error");
                     }
@@ -361,7 +361,7 @@ async fn main() {
             e = proxy_rtsp_listener.recv().fuse() => match e {
                 Some(proxy_tunnel) => {
                     if let Some(socket) = virtual_net.udp_socket(0).await {
-                        async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket, vec![default_cluster_cert.clone()])));
+                        tokio::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Local(alias_sdk.clone(), socket, vec![default_cluster_cert.clone()])));
                     } else {
                         log::error!("Virtual Net create socket error");
                     }
@@ -373,7 +373,7 @@ async fn main() {
             },
             e = cluster_endpoint.recv().fuse() => match e {
                 Some(proxy_tunnel) => {
-                    async_std::task::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Cluster));
+                    tokio::spawn(tunnel_task(proxy_tunnel, agents.clone(), TunnelContext::Cluster));
                 }
                 None => {
                     log::error!("cluster_endpoint.accept()");

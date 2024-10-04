@@ -1,5 +1,4 @@
 use std::{
-    error::Error,
     io,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     pin::Pin,
@@ -19,16 +18,19 @@ use atm0s_sdn::{
     NodeAddr, NodeId, SdnBuilder, SdnControllerUtils, SdnExtIn, SdnExtOut, SdnOwner,
     ServiceBroadcastLevel,
 };
-use futures::{AsyncRead, AsyncWrite};
 use protocol::{
     cluster::{wait_object, write_object, ClusterTunnelRequest, ClusterTunnelResponse},
-    stream::NamedStream,
+    stream::TunnelStream,
 };
-use quinn::{ConnectionError, Endpoint, Incoming, RecvStream, SendStream};
+use quinn::{Endpoint, Incoming, RecvStream, SendStream};
 
 use alias_async::AliasAsyncEvent;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use serde::{Deserialize, Serialize};
+use tokio::{
+    io::{AsyncRead, AsyncWrite, ReadBuf},
+    time::sleep,
+};
 use vnet::{NetworkPkt, OutEvent};
 
 use super::{ProxyListener, ProxyTunnel};
@@ -63,7 +65,7 @@ pub async fn run_sdn(
     priv_key: PrivatePkcs8KeyDer<'static>,
     cert: CertificateDer<'static>,
 ) -> (ProxyClusterListener, AliasSdk, VirtualNetwork) {
-    let (mut vnet, tx, rx) = vnet::VirtualNetwork::new(node_id);
+    let (mut vnet, tx, mut rx) = vnet::VirtualNetwork::new(node_id);
     let (mut alias_async, alias_sdk) = alias_async::AliasAsync::new();
 
     let server_socket = vnet
@@ -83,7 +85,7 @@ pub async fn run_sdn(
         builder.add_seed(seed);
     }
 
-    async_std::task::spawn(async move {
+    tokio::spawn(async move {
         let node_info = NodeInfo { uptime: 0 };
         let started_at = Instant::now();
         let mut count = 0;
@@ -197,7 +199,7 @@ pub async fn run_sdn(
                     _ => {}
                 }
             }
-            async_std::task::sleep(Duration::from_millis(1)).await;
+            sleep(Duration::from_millis(1)).await;
             count += 1;
         }
     });
@@ -298,29 +300,15 @@ impl ProxyTunnel for ProxyClusterIncomingTunnel {
     }
 }
 
-impl NamedStream for ProxyClusterIncomingTunnel {
-    fn name(&self) -> &'static str {
-        "proxy-sdn-quic-tunnel"
-    }
-}
-
 impl AsyncRead for ProxyClusterIncomingTunnel {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
         let this = self.get_mut();
         match this.streams {
-            Some((ref mut read, _)) => match read.poll_read(cx, buf) {
-                // TODO refactor
-                // Quinn seems to have some issue with close connection. the Writer side already close but
-                // Reader side only fire bellow error
-                Poll::Ready(Err(quinn::ReadError::ConnectionLost(
-                    ConnectionError::ApplicationClosed(_),
-                ))) => Poll::Ready(Ok(0)),
-                e => e.map_err(|e| e.into()),
-            },
+            Some((ref mut read, _)) => Pin::new(read).poll_read(cx, buf),
             None => {
                 this.wait_stream_read = Some(cx.waker().clone());
                 Poll::Pending
@@ -356,10 +344,10 @@ impl AsyncWrite for ProxyClusterIncomingTunnel {
         }
     }
 
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let this = self.get_mut();
         match this.streams {
-            Some((_, ref mut write)) => Pin::new(write).poll_close(cx),
+            Some((_, ref mut write)) => Pin::new(write).poll_shutdown(cx),
             None => {
                 this.wait_stream_write = Some(cx.waker().clone());
                 Poll::Pending
@@ -368,10 +356,7 @@ impl AsyncWrite for ProxyClusterIncomingTunnel {
     }
 }
 
-pub struct ProxyClusterOutgoingTunnel {
-    send: SendStream,
-    recv: RecvStream,
-}
+pub struct ProxyClusterOutgoingTunnel {}
 
 impl ProxyClusterOutgoingTunnel {
     pub async fn connect<'a>(
@@ -379,7 +364,7 @@ impl ProxyClusterOutgoingTunnel {
         dest: Ipv4Addr,
         domain: &str,
         server_certs: &[CertificateDer<'a>],
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> anyhow::Result<TunnelStream<RecvStream, SendStream>> {
         let client = make_quinn_client(socket, server_certs)?;
         log::info!(
             "[ProxyClusterOutgoingTunnel] connecting to agent for domain: {domain} in node {dest}"
@@ -393,54 +378,6 @@ impl ProxyClusterOutgoingTunnel {
         log::info!(
             "[ProxyClusterOutgoingTunnel] opened bi stream to agent for domain: {domain} in node {dest}"
         );
-        Ok(Self { send, recv })
-    }
-}
-
-impl NamedStream for ProxyClusterOutgoingTunnel {
-    fn name(&self) -> &'static str {
-        "outgoing-sdn-quic-tunnel"
-    }
-}
-
-impl AsyncRead for ProxyClusterOutgoingTunnel {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
-        let this = self.get_mut();
-        match this.recv.poll_read(cx, buf) {
-            // TODO refactor
-            // Quinn seems to have some issue with close connection. the Writer side already close but
-            // Reader side only fire bellow error
-            Poll::Ready(Err(quinn::ReadError::ConnectionLost(
-                ConnectionError::ApplicationClosed(_),
-            ))) => Poll::Ready(Ok(0)),
-            e => e.map_err(|e| e.into()),
-        }
-    }
-}
-
-impl AsyncWrite for ProxyClusterOutgoingTunnel {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        let this = self.get_mut();
-        Pin::new(&mut this.send)
-            .poll_write(cx, buf)
-            .map_err(|e| e.into())
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let this = self.get_mut();
-        Pin::new(&mut this.send).poll_flush(cx)
-    }
-
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let this = self.get_mut();
-        Pin::new(&mut this.send).poll_close(cx)
+        Ok(TunnelStream::new(recv, send))
     }
 }

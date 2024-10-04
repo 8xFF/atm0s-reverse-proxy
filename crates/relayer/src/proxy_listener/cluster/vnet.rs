@@ -1,8 +1,12 @@
 use std::collections::{HashMap, VecDeque};
 
-use async_std::channel::{Receiver, Sender};
 use atm0s_sdn::{base::Buffer, NodeId};
-use futures::{select, FutureExt};
+use tokio::{
+    select,
+    sync::mpsc::{
+        channel, unbounded_channel, Receiver, Sender, UnboundedReceiver, UnboundedSender,
+    },
+};
 
 use super::vsocket::VirtualUdpSocket;
 
@@ -26,17 +30,17 @@ pub struct VirtualNetwork {
     node_id: NodeId,
     in_rx: Receiver<NetworkPkt>,
     out_tx: Sender<OutEvent>,
-    close_socket_tx: Sender<u16>,
-    close_socket_rx: Receiver<u16>,
+    close_socket_tx: UnboundedSender<u16>,
+    close_socket_rx: UnboundedReceiver<u16>,
     sockets: HashMap<u16, Sender<NetworkPkt>>,
     ports: VecDeque<u16>,
 }
 
 impl VirtualNetwork {
     pub fn new(node_id: NodeId) -> (Self, Sender<NetworkPkt>, Receiver<OutEvent>) {
-        let (in_tx, in_rx) = async_std::channel::bounded(1000);
-        let (out_tx, out_rx) = async_std::channel::bounded(1000);
-        let (close_socket_tx, close_socket_rx) = async_std::channel::unbounded();
+        let (in_tx, in_rx) = channel(1000);
+        let (out_tx, out_rx) = channel(1000);
+        let (close_socket_tx, close_socket_rx) = unbounded_channel();
 
         (
             Self {
@@ -70,7 +74,7 @@ impl VirtualNetwork {
             .send(OutEvent::Bind(port))
             .await
             .expect("Should send bind");
-        let (tx, rx) = async_std::channel::bounded(1000);
+        let (tx, rx) = channel(1000);
         self.sockets.insert(port, tx);
         Some(VirtualUdpSocket::new(
             self.node_id,
@@ -83,15 +87,15 @@ impl VirtualNetwork {
 
     pub async fn recv(&mut self) -> Option<()> {
         select! {
-            port = self.close_socket_rx.recv().fuse() => {
+            port = self.close_socket_rx.recv() => {
                 let port = port.expect("Should have port");
                 self.ports.push_back(port);
                 self.sockets.remove(&port);
                 self.out_tx.send(OutEvent::Unbind(port)).await.expect("Should send unbind");
                 Some(())
             }
-            pkt = self.in_rx.recv().fuse() => {
-                let pkt = pkt.ok()?;
+            pkt = self.in_rx.recv() => {
+                let pkt = pkt?;
                 let src = pkt.local_port;
                 if let Some(socket_tx) = self.sockets.get(&src) {
                     if let Err(e) = socket_tx.try_send(pkt) {

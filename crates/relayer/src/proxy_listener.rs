@@ -1,11 +1,9 @@
 //! Proxy is a server which accept connections from users and forward them to the target agent.
-
 use std::pin::Pin;
 
 use derive_more::derive::From;
-use futures::{AsyncRead, AsyncWrite};
-use protocol::stream::NamedStream;
 use tcp::ProxyTcpTunnel;
+use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::ProxyClusterIncomingTunnel;
 
@@ -17,9 +15,7 @@ pub trait DomainDetector: Send + Sync {
     fn get_domain(&self, buf: &[u8]) -> Option<String>;
 }
 
-pub trait ProxyTunnel:
-    AsyncRead + AsyncWrite + NamedStream + Send + Sync + Unpin + 'static
-{
+pub trait ProxyTunnel: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static {
     fn wait(&mut self) -> impl std::future::Future<Output = Option<()>> + Send;
     fn source_addr(&self) -> String;
     fn local(&self) -> bool;
@@ -75,21 +71,12 @@ impl ProxyTunnel for ProxyTunnelWrap {
     }
 }
 
-impl NamedStream for ProxyTunnelWrap {
-    fn name(&self) -> &'static str {
-        match self {
-            ProxyTunnelWrap::Tcp(inner) => inner.name(),
-            ProxyTunnelWrap::Cluster(inner) => inner.name(),
-        }
-    }
-}
-
 impl AsyncRead for ProxyTunnelWrap {
     fn poll_read(
-        self: Pin<&mut Self>,
+        self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-        buf: &mut [u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
         match self.get_mut() {
             ProxyTunnelWrap::Tcp(inner) => Pin::new(inner).poll_read(cx, buf),
             ProxyTunnelWrap::Cluster(inner) => Pin::new(inner).poll_read(cx, buf),
@@ -102,7 +89,7 @@ impl AsyncWrite for ProxyTunnelWrap {
         self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         buf: &[u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
+    ) -> std::task::Poll<Result<usize, std::io::Error>> {
         match self.get_mut() {
             ProxyTunnelWrap::Tcp(inner) => Pin::new(inner).poll_write(cx, buf),
             ProxyTunnelWrap::Cluster(inner) => Pin::new(inner).poll_write(cx, buf),
@@ -112,20 +99,20 @@ impl AsyncWrite for ProxyTunnelWrap {
     fn poll_flush(
         self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
+    ) -> std::task::Poll<Result<(), std::io::Error>> {
         match self.get_mut() {
             ProxyTunnelWrap::Tcp(inner) => Pin::new(inner).poll_flush(cx),
             ProxyTunnelWrap::Cluster(inner) => Pin::new(inner).poll_flush(cx),
         }
     }
 
-    fn poll_close(
+    fn poll_shutdown(
         self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
+    ) -> std::task::Poll<Result<(), std::io::Error>> {
         match self.get_mut() {
-            ProxyTunnelWrap::Tcp(inner) => Pin::new(inner).poll_close(cx),
-            ProxyTunnelWrap::Cluster(inner) => Pin::new(inner).poll_close(cx),
+            ProxyTunnelWrap::Tcp(inner) => Pin::new(inner).poll_shutdown(cx),
+            ProxyTunnelWrap::Cluster(inner) => Pin::new(inner).poll_shutdown(cx),
         }
     }
 }

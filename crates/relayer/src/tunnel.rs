@@ -1,4 +1,4 @@
-use std::{error::Error, time::Instant};
+use std::time::Instant;
 
 use crate::{
     proxy_listener::{
@@ -11,12 +11,11 @@ use crate::{
     METRICS_TUNNEL_CLUSTER_COUNT, METRICS_TUNNEL_CLUSTER_ERROR_COUNT,
     METRICS_TUNNEL_CLUSTER_HISTOGRAM, METRICS_TUNNEL_CLUSTER_LIVE,
 };
+use anyhow::anyhow;
 use metrics::{counter, gauge, histogram};
-use protocol::{
-    cluster::{wait_object, write_object, ClusterTunnelRequest, ClusterTunnelResponse},
-    stream::pipeline_streams,
-};
+use protocol::cluster::{wait_object, write_object, ClusterTunnelRequest, ClusterTunnelResponse};
 use rustls::pki_types::CertificateDer;
+use tokio::io::copy_bidirectional;
 
 pub enum TunnelContext<'a> {
     Cluster,
@@ -87,11 +86,11 @@ pub async fn tunnel_task<P: ProxyTunnel + Into<ProxyTunnelWrap>>(
 
 async fn tunnel_over_cluster<'a>(
     domain: String,
-    proxy_tunnel: ProxyTunnelWrap,
+    mut proxy_tunnel: ProxyTunnelWrap,
     node_alias_sdk: AliasSdk,
     socket: VirtualUdpSocket,
     server_certs: &'a [CertificateDer<'a>],
-) -> Result<(), Box<dyn Error>> {
+) -> anyhow::Result<()> {
     let started = Instant::now();
     log::warn!(
         "[TunnerOverCluster] agent not found for domain: {domain} in local => finding in cluster",
@@ -100,7 +99,7 @@ async fn tunnel_over_cluster<'a>(
     let dest = node_alias_sdk
         .find_alias(node_alias_id)
         .await
-        .ok_or("NODE_ALIAS_NOT_FOUND".to_string())?;
+        .ok_or(anyhow!("NODE_ALIAS_NOT_FOUND"))?;
     log::info!("[TunnerOverCluster]  found agent for domain: {domain} in node {dest}");
 
     let mut outgoing_tunnel =
@@ -118,12 +117,12 @@ async fn tunnel_over_cluster<'a>(
     let res = wait_object::<_, ClusterTunnelResponse, 1000>(&mut outgoing_tunnel).await?;
     if !res.success {
         log::error!("[TunnerOverCluster] ClusterTunnelResponse not success");
-        return Err("ClusterTunnelResponse not success".into());
+        return Err(anyhow!("ClusterTunnelResponse not success"));
     }
 
     log::info!("[TunnerOverCluster] start cluster proxy tunnel for domain {domain}");
 
-    match pipeline_streams(proxy_tunnel, outgoing_tunnel).await {
+    match copy_bidirectional(&mut proxy_tunnel, &mut outgoing_tunnel).await {
         Ok(res) => {
             log::info!(
                 "[TunnerOverCluster] end cluster proxy tunnel for domain {domain}, res {res:?}"
