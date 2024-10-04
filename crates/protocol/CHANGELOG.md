@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-protocol-v0.2.0...atm0s-reverse-proxy-protocol-v0.2.1) - 2024-10-04
+
+### Fixed
+
+- full cpu with pipe-streams when writer Pending in long time ([#65](https://github.com/8xFF/atm0s-reverse-proxy/pull/65))
+- tunnel stuck ([#63](https://github.com/8xFF/atm0s-reverse-proxy/pull/63))
+
+### Other
+
+- switched to tokio ([#66](https://github.com/8xFF/atm0s-reverse-proxy/pull/66))
+
 ## [0.2.0](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-protocol-v0.1.1...atm0s-reverse-proxy-protocol-v0.2.0) - 2024-09-09
 
 ### Fixed

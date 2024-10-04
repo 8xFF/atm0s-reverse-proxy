@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-reverse-proxy-protocol-ed25519"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "Protocol implement with Ed25519 for atm0s-reverse proxy cluster"
 license = "MIT"
@@ -12,5 +12,5 @@ bincode = { workspace = true }
 ed25519-dalek = { workspace = true, features = ["rand_core", "serde", "pkcs8", "pem"] }
 rand = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-protocol = { path = "../protocol", package = "atm0s-reverse-proxy-protocol", version = "0.2.0" }
+protocol = { path = "../protocol", package = "atm0s-reverse-proxy-protocol", version = "0.2.1" }
 anyhow = { workspace = true }
