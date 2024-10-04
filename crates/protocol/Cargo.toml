@@ -10,6 +10,6 @@ license = "MIT"
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
 bincode = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["io-util"] }
 log = { workspace = true }
 anyhow = { workspace = true }
