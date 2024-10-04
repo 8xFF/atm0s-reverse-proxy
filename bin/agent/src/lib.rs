@@ -13,43 +13,28 @@ pub use connection::{
 pub use local_tunnel::{registry::SimpleServiceRegistry, LocalTunnel, ServiceRegistry};
 use tokio::{io::copy_bidirectional, net::TcpStream};
 
-pub async fn run_tunnel_connection<S>(
-    mut incoming_proxy_conn: S,
-    registry: Arc<dyn ServiceRegistry>,
-) where
+pub async fn run_tunnel_connection<S>(mut incoming_proxy_conn: S, registry: Arc<dyn ServiceRegistry>)
+where
     S: SubConnection,
 {
     log::info!("sub_connection pipe to local_tunnel start");
 
-    let local_tunnel =
-        match wait_object::<_, AgentTunnelRequest, 1000>(&mut incoming_proxy_conn).await {
-            Ok(handshake) => {
-                log::info!(
-                    "sub_connection pipe with handshake: tls: {}, {}/{:?} ",
-                    handshake.tls,
-                    handshake.domain,
-                    handshake.service
-                );
-                if let Some(dest) =
-                    registry.dest_for(handshake.tls, handshake.service, &handshake.domain)
-                {
-                    log::info!("create tunnel to dest {}", dest);
-                    TcpStream::connect(dest).await
-                } else {
-                    log::warn!(
-                        "dest for service {:?} tls {} domain {} not found",
-                        handshake.service,
-                        handshake.tls,
-                        handshake.domain
-                    );
-                    return;
-                }
-            }
-            Err(e) => {
-                log::error!("read first pkt error: {}", e);
+    let local_tunnel = match wait_object::<_, AgentTunnelRequest, 1000>(&mut incoming_proxy_conn).await {
+        Ok(handshake) => {
+            log::info!("sub_connection pipe with handshake: tls: {}, {}/{:?} ", handshake.tls, handshake.domain, handshake.service);
+            if let Some(dest) = registry.dest_for(handshake.tls, handshake.service, &handshake.domain) {
+                log::info!("create tunnel to dest {}", dest);
+                TcpStream::connect(dest).await
+            } else {
+                log::warn!("dest for service {:?} tls {} domain {} not found", handshake.service, handshake.tls, handshake.domain);
                 return;
             }
-        };
+        }
+        Err(e) => {
+            log::error!("read first pkt error: {}", e);
+            return;
+        }
+    };
 
     let mut local_tunnel = match local_tunnel {
         Ok(local_tunnel) => local_tunnel,

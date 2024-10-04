@@ -1,11 +1,9 @@
 RUST_LOG=info cargo run -- \
-    --api-port 10001 \
-    --http-port 11001 \
-    --https-port 12001 \
-    --connector-port 0.0.0.0:13001 \
+    --proxy-http-listener 0.0.0.0:11001 \
+    --proxy-tls-listener 0.0.0.0:12001 \
+    --proxy-rtsp-listener 0.0.0.0:5341 \
+    --proxy-rtsps-listener 0.0.0.0:35341 \
+    --agent-listener 0.0.0.0:13001 \
     --root-domain local.ha.8xff.io \
     --sdn-node-id 1 \
-    --sdn-ip 127.0.0.1 \
-    --sdn-port 50001 \
-    --rtsp-port 5341 \
-    --rtsps-port 15341 \
+    --sdn-listener 127.0.0.1:14001 \

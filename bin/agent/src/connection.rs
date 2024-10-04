@@ -17,10 +17,7 @@ pub enum Protocol {
 
 pub trait SubConnection: AsyncRead + AsyncWrite + Unpin + Send + Sync {}
 
-impl<R: AsyncRead + Unpin + Send + Sync, W: AsyncWrite + Unpin + Send + Sync> SubConnection
-    for TunnelStream<R, W>
-{
-}
+impl<R: AsyncRead + Unpin + Send + Sync, W: AsyncWrite + Unpin + Send + Sync> SubConnection for TunnelStream<R, W> {}
 
 #[async_trait::async_trait]
 pub trait Connection<S: SubConnection>: Send + Sync {

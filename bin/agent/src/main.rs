@@ -1,9 +1,6 @@
 use std::{alloc::System, net::SocketAddr, sync::Arc};
 
-use atm0s_reverse_proxy_agent::{
-    run_tunnel_connection, Connection, Protocol, QuicConnection, ServiceRegistry,
-    SimpleServiceRegistry, SubConnection, TcpConnection,
-};
+use atm0s_reverse_proxy_agent::{run_tunnel_connection, Connection, Protocol, QuicConnection, ServiceRegistry, SimpleServiceRegistry, SubConnection, TcpConnection};
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 use clap::Parser;
 use protocol::{services::SERVICE_RTSP, DEFAULT_TUNNEL_CERT};
@@ -62,28 +59,18 @@ async fn main() {
     let args = Args::parse();
 
     let server_certs = if let Some(cert) = args.custom_quic_cert_base64 {
-        vec![CertificateDer::from(
-            URL_SAFE
-                .decode(cert)
-                .expect("Custom cert should in base64 format")
-                .to_vec(),
-        )]
+        vec![CertificateDer::from(URL_SAFE.decode(cert).expect("Custom cert should in base64 format").to_vec())]
     } else {
         vec![CertificateDer::from(DEFAULT_TUNNEL_CERT.to_vec())]
     };
 
-    rustls::crypto::ring::default_provider()
-        .install_default()
-        .expect("should install ring as default");
+    rustls::crypto::ring::default_provider().install_default().expect("should install ring as default");
 
     //if RUST_LOG env is not set, set it to info
     if std::env::var("RUST_LOG").is_err() {
         std::env::set_var("RUST_LOG", "info");
     }
-    tracing_subscriber::registry()
-        .with(fmt::layer())
-        .with(EnvFilter::from_default_env())
-        .init();
+    tracing_subscriber::registry().with(fmt::layer()).with(EnvFilter::from_default_env()).init();
 
     //read local_key from file first, if not exist, create a new one and save to file
     let agent_signer = match std::fs::read_to_string(&args.local_key) {
@@ -121,57 +108,34 @@ async fn main() {
     let registry = Arc::new(registry);
 
     loop {
-        log::info!(
-            "Connecting to connector... {:?} addr: {}",
-            args.connector_protocol,
-            args.connector_addr
-        );
+        log::info!("Connecting to connector... {:?} addr: {}", args.connector_protocol, args.connector_addr);
         match args.connector_protocol {
-            Protocol::Tcp => {
-                match TcpConnection::new(args.connector_addr.clone(), &agent_signer).await {
-                    Ok(conn) => {
-                        log::info!(
-                            "Connected to connector via tcp with res {:?}",
-                            conn.response()
-                        );
-                        run_connection_loop(conn, registry.clone()).await;
-                    }
-                    Err(e) => {
-                        log::error!("Connect to connector via tcp error: {}", e);
-                    }
+            Protocol::Tcp => match TcpConnection::new(args.connector_addr.clone(), &agent_signer).await {
+                Ok(conn) => {
+                    log::info!("Connected to connector via tcp with res {:?}", conn.response());
+                    run_connection_loop(conn, registry.clone()).await;
                 }
-            }
-            Protocol::Quic => {
-                match QuicConnection::new(
-                    args.connector_addr.clone(),
-                    &agent_signer,
-                    &server_certs,
-                    args.allow_quic_insecure,
-                )
-                .await
-                {
-                    Ok(conn) => {
-                        log::info!(
-                            "Connected to connector via quic with res {:?}",
-                            conn.response()
-                        );
-                        run_connection_loop(conn, registry.clone()).await;
-                    }
-                    Err(e) => {
-                        log::error!("Connect to connector via quic error: {}", e);
-                    }
+                Err(e) => {
+                    log::error!("Connect to connector via tcp error: {}", e);
                 }
-            }
+            },
+            Protocol::Quic => match QuicConnection::new(args.connector_addr.clone(), &agent_signer, &server_certs, args.allow_quic_insecure).await {
+                Ok(conn) => {
+                    log::info!("Connected to connector via quic with res {:?}", conn.response());
+                    run_connection_loop(conn, registry.clone()).await;
+                }
+                Err(e) => {
+                    log::error!("Connect to connector via quic error: {}", e);
+                }
+            },
         }
         //TODO exponential backoff
         sleep(std::time::Duration::from_secs(1)).await;
     }
 }
 
-pub async fn run_connection_loop<S>(
-    mut connection: impl Connection<S>,
-    registry: Arc<dyn ServiceRegistry>,
-) where
+pub async fn run_connection_loop<S>(mut connection: impl Connection<S>, registry: Arc<dyn ServiceRegistry>)
+where
     S: SubConnection + 'static,
 {
     loop {

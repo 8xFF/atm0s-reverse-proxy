@@ -17,10 +17,7 @@ pub enum QuicTlsError {
     VerifierBuilderError(#[from] rustls::client::VerifierBuilderError),
 }
 
-pub fn configure_client(
-    server_certs: &[CertificateDer],
-    allow_quic_insecure: bool,
-) -> Result<ClientConfig, QuicTlsError> {
+pub fn configure_client(server_certs: &[CertificateDer], allow_quic_insecure: bool) -> Result<ClientConfig, QuicTlsError> {
     let mut config = if allow_quic_insecure {
         let provider = rustls::crypto::CryptoProvider::get_default().unwrap();
         ClientConfig::new(Arc::new(QuicClientConfig::try_from(
@@ -39,11 +36,7 @@ pub fn configure_client(
 
     let mut transport = TransportConfig::default();
     transport.keep_alive_interval(Some(Duration::from_secs(15)));
-    transport.max_idle_timeout(Some(
-        Duration::from_secs(30)
-            .try_into()
-            .expect("Should config timeout"),
-    ));
+    transport.max_idle_timeout(Some(Duration::from_secs(30).try_into().expect("Should config timeout")));
     config.transport_config(Arc::new(transport));
     Ok(config)
 }
@@ -58,21 +51,11 @@ impl SkipServerVerification {
 }
 
 impl ServerCertVerifier for SkipServerVerification {
-    fn verify_tls12_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+    fn verify_tls12_signature(&self, _message: &[u8], _cert: &CertificateDer<'_>, _dss: &rustls::DigitallySignedStruct) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
         Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
     }
 
-    fn verify_tls13_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+    fn verify_tls13_signature(&self, _message: &[u8], _cert: &CertificateDer<'_>, _dss: &rustls::DigitallySignedStruct) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
         Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
     }
 

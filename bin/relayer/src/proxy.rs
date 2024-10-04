@@ -25,10 +25,7 @@ impl ProxyDestination {
 }
 
 pub trait ProxyDestinationDetector {
-    async fn determine<S: AsyncRead + AsyncWrite>(
-        &self,
-        stream: &mut S,
-    ) -> anyhow::Result<ProxyDestination>;
+    async fn determine<S: AsyncRead + AsyncWrite>(&self, stream: &mut S) -> anyhow::Result<ProxyDestination>;
 }
 
 pub struct ProxyTcpListener<Detector> {

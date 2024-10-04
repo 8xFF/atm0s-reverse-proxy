@@ -23,18 +23,10 @@ pub struct UnstructedSdn {
 }
 
 impl UnstructedSdn {
-    pub async fn new(
-        node: NodeId,
-        listener: SocketAddr,
-        priv_key: PrivatePkcs8KeyDer<'static>,
-        cert: CertificateDer<'static>,
-    ) -> anyhow::Result<Self> {
+    pub async fn new(node: NodeId, listener: SocketAddr, priv_key: PrivatePkcs8KeyDer<'static>, cert: CertificateDer<'static>) -> anyhow::Result<Self> {
         let endpoint = make_server_endpoint(listener, priv_key, cert)?;
 
-        Ok(Self {
-            endpoint,
-            peer_conns: HashMap::new(),
-        })
+        Ok(Self { endpoint, peer_conns: HashMap::new() })
     }
 
     pub fn requester(&mut self) -> UnstrutedSdnRequester {
@@ -60,10 +52,7 @@ impl UnstrutedSdnRequester {
         todo!()
     }
 
-    pub async fn create_stream_to(
-        &self,
-        dest: NodeId,
-    ) -> anyhow::Result<TunnelStream<RecvStream, SendStream>> {
+    pub async fn create_stream_to(&self, dest: NodeId) -> anyhow::Result<TunnelStream<RecvStream, SendStream>> {
         todo!()
     }
 }
