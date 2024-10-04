@@ -119,6 +119,6 @@ pub async fn write_buf<W: AsyncWrite + Send + Unpin, const MAX_SIZE: usize>(
     let len_buf = (data_buf.len() as u16).to_be_bytes();
 
     writer.write_all(&len_buf).await?;
-    writer.write_all(&data_buf).await?;
+    writer.write_all(data_buf).await?;
     Ok(())
 }
