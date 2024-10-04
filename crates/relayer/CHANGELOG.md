@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-relayer-v0.2.0...atm0s-reverse-proxy-relayer-v0.3.0) - 2024-10-04
+
+### Other
+
+- update deps and switch to parking_lot ([#68](https://github.com/8xFF/atm0s-reverse-proxy/pull/68))
+
 ## [0.2.0](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-relayer-v0.1.2...atm0s-reverse-proxy-relayer-v0.2.0) - 2024-10-04
 
 ### Fixed
