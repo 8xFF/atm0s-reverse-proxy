@@ -1,5 +1,3 @@
-use std::net::SocketAddr;
-
 use peer_internal::PeerConnectionInternal;
 use quinn::{Connecting, Connection, Incoming, RecvStream, SendStream};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -63,6 +61,14 @@ impl PeerConnection {
     pub fn set_connected(&mut self) {
         self.connected = true;
     }
+
+    pub async fn send(&self, msg: PeerMessage) -> anyhow::Result<()> {
+        Ok(self.control_tx.send(PeerConnectionControl::Send(msg)).await?)
+    }
+
+    pub fn try_send(&self, msg: PeerMessage) -> anyhow::Result<()> {
+        Ok(self.control_tx.try_send(PeerConnectionControl::Send(msg))?)
+    }
 }
 
 async fn run_connection(remote: NodeAddress, connection: Connection, send: SendStream, recv: RecvStream, internal_tx: Sender<InternalEvent>, control_rx: Receiver<PeerConnectionControl>) {
@@ -76,7 +82,7 @@ async fn run_connection(remote: NodeAddress, connection: Connection, send: SendS
     log::info!("[PeerConnection] run loop for {remote}");
     loop {
         if let Err(e) = internal.recv_complex().await {
-            log::error!("[PeerConnection] {remote} error {e:?}");
+            log::error!("[PeerConnection] {remote} error {e}");
             break;
         }
     }

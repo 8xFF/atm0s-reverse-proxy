@@ -1,5 +1,6 @@
-use std::marker::PhantomData;
+use std::{fmt::Debug, marker::PhantomData};
 
+use anyhow::Ok;
 use serde::{de::DeserializeOwned, Serialize};
 use tokio_util::{
     bytes::{Buf, BufMut},
@@ -20,15 +21,20 @@ impl<Item: Serialize> Encoder<Item> for BincodeCodec<Item> {
     type Error = bincode::Error;
 
     fn encode(&mut self, item: Item, dst: &mut tokio_util::bytes::BytesMut) -> Result<(), Self::Error> {
-        bincode::serialize_into(dst.writer(), &item)
+        let res = bincode::serialize_into(dst.writer(), &item);
+        res
     }
 }
 
-impl<Item: DeserializeOwned> Decoder for BincodeCodec<Item> {
+impl<Item: DeserializeOwned + Debug> Decoder for BincodeCodec<Item> {
     type Error = bincode::Error;
     type Item = Item;
 
     fn decode(&mut self, src: &mut tokio_util::bytes::BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        bincode::deserialize_from::<_, Item>(src.reader()).map(|o| Some(o))
+        if src.is_empty() {
+            return Result::<_, Self::Error>::Ok(Option::<Self::Item>::None);
+        }
+        let res = bincode::deserialize_from::<_, Item>(src.reader()).map(|o| Some(o));
+        res
     }
 }

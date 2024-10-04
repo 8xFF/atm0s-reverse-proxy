@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr};
+use std::{collections::HashMap, net::SocketAddr, time::Duration};
 
 use alias::AliasGuard;
 use anyhow::anyhow;
@@ -14,6 +14,7 @@ use tokio::{
         mpsc::{channel, unbounded_channel, Receiver, Sender, UnboundedReceiver, UnboundedSender},
         oneshot,
     },
+    time::Interval,
 };
 
 use crate::quic::{make_server_endpoint, TunnelQuicStream};
@@ -56,6 +57,7 @@ pub struct P2pNetwork {
     internal_tx: Sender<InternalEvent>,
     internal_rx: Receiver<InternalEvent>,
     peer_conns: HashMap<NodeAddress, PeerConnection>,
+    ticker: Interval,
 }
 
 impl P2pNetwork {
@@ -72,6 +74,7 @@ impl P2pNetwork {
             internal_rx,
             control_tx,
             control_rx,
+            ticker: tokio::time::interval(Duration::from_secs(2)),
         })
     }
 
@@ -81,6 +84,9 @@ impl P2pNetwork {
 
     pub async fn recv(&mut self) -> anyhow::Result<P2pNetworkEvent> {
         select! {
+            _ = self.ticker.tick() => {
+                self.process_tick()
+            }
             connecting = self.endpoint.accept() => {
                 self.process_incoming(connecting.ok_or(anyhow!("quic crash"))?)
             },
@@ -96,6 +102,15 @@ impl P2pNetwork {
 
     pub fn shutdown(&mut self) {
         self.endpoint.close(VarInt::from_u32(0), "Shutdown".as_bytes());
+    }
+
+    fn process_tick(&mut self) -> anyhow::Result<P2pNetworkEvent> {
+        for peer in self.peer_conns.values() {
+            if let Err(e) = peer.try_send(PeerMessage::Sync {}) {
+                log::error!("[P2pNetwork] try send message to peer {} error {e}", peer.remote());
+            }
+        }
+        Ok(P2pNetworkEvent::Continue)
     }
 
     fn process_incoming(&mut self, incoming: Incoming) -> anyhow::Result<P2pNetworkEvent> {
@@ -115,23 +130,27 @@ impl P2pNetwork {
         match event {
             InternalEvent::PeerConnected(remote) => {
                 log::info!("[P2pNetwork] connected to {remote}");
+                let peer = self.peer_conns.get_mut(&remote).expect("should have peer");
+                peer.set_connected();
                 Ok(P2pNetworkEvent::Continue)
             }
             InternalEvent::PeerData(remote, data) => {
                 log::info!("[P2pNetwork] on data {data:?} from {remote}");
                 Ok(P2pNetworkEvent::Continue)
             }
+            InternalEvent::PeerStream(remote, stream) => {
+                log::info!("[P2pNetwork] on new stream from {remote}");
+                Ok(P2pNetworkEvent::IncomingStream(remote, stream))
+            }
             InternalEvent::PeerConnectError(remote, err) => {
                 log::error!("[P2pNetwork] connect to {remote} error {err:?}");
+                self.peer_conns.remove(&remote);
                 Ok(P2pNetworkEvent::Continue)
             }
             InternalEvent::PeerDisconnected(remote) => {
                 log::info!("[P2pNetwork] disconnected from {remote}");
+                self.peer_conns.remove(&remote);
                 Ok(P2pNetworkEvent::Continue)
-            }
-            InternalEvent::PeerStream(remote, stream) => {
-                log::info!("[P2pNetwork] on new stream from {remote}");
-                Ok(P2pNetworkEvent::IncomingStream(remote, stream))
             }
         }
     }
