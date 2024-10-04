@@ -3,7 +3,7 @@ resolver = "2"
 
 members = [
     "bin/agent",
-    "bin/relayer-quic",
+    "bin/relayer",
     "crates/*",
 ]
 

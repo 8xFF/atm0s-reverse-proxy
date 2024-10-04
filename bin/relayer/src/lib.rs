@@ -1,127 +1,177 @@
-use metrics::{counter, gauge};
-use proxy_listener::ProxyTunnelWrap;
+use std::{collections::HashMap, net::SocketAddr};
 
-use crate::utils::home_id_from_domain;
-
-// this is for online agent counting
-pub const METRICS_AGENT_LIVE: &str = "atm0s_agent_live";
-pub const METRICS_AGENT_HISTOGRAM: &str = "atm0s_agent_histogram";
-pub const METRICS_AGENT_COUNT: &str = "atm0s_agent_count";
-
-// this is for proxy from agent counting (incoming)
-pub const METRICS_PROXY_AGENT_LIVE: &str = "atm0s_proxy_agent_live";
-pub const METRICS_PROXY_AGENT_COUNT: &str = "atm0s_proxy_agent_count";
-pub const METRICS_PROXY_AGENT_HISTOGRAM: &str = "atm0s_proxy_agent_histogram";
-pub const METRICS_PROXY_AGENT_ERROR_COUNT: &str = "atm0s_proxy_agent_error_count";
-
-// this is for http proxy counting (incoming)
-pub const METRICS_PROXY_HTTP_LIVE: &str = "atm0s_proxy_http_live";
-pub const METRICS_PROXY_HTTP_COUNT: &str = "atm0s_proxy_http_count";
-pub const METRICS_PROXY_HTTP_ERROR_COUNT: &str = "atm0s_proxy_http_error_count";
-
-// this is for cluster proxy (incoming)
-pub const METRICS_PROXY_CLUSTER_LIVE: &str = "atm0s_proxy_cluster_live";
-pub const METRICS_PROXY_CLUSTER_COUNT: &str = "atm0s_proxy_cluster_count";
-pub const METRICS_PROXY_CLUSTER_ERROR_COUNT: &str = "atm0s_proxy_cluster_error_count";
-
-// this is for tunnel from local node to other node (outgoing)
-pub const METRICS_TUNNEL_CLUSTER_LIVE: &str = "atm0s_tunnel_cluster_live";
-pub const METRICS_TUNNEL_CLUSTER_COUNT: &str = "atm0s_tunnel_cluster_count";
-pub const METRICS_TUNNEL_CLUSTER_HISTOGRAM: &str = "atm0s_tunnel_cluster_histogram";
-pub const METRICS_TUNNEL_CLUSTER_ERROR_COUNT: &str = "atm0s_tunnel_cluster_error_count";
-
-// this is for tunnel from local node to agent  (outgoing)
-pub const METRICS_TUNNEL_AGENT_LIVE: &str = "atm0s_tunnel_agent_live";
-pub const METRICS_TUNNEL_AGENT_COUNT: &str = "atm0s_tunnel_agent_count";
-pub const METRICS_TUNNEL_AGENT_HISTOGRAM: &str = "atm0s_tunnel_agent_histogram";
-pub const METRICS_TUNNEL_AGENT_ERROR_COUNT: &str = "atm0s_tunnel_agent_error_count";
-
-mod agent_listener;
-mod agent_store;
-mod agent_worker;
-mod proxy_listener;
-mod tunnel;
-mod utils;
-
-pub use agent_listener::quic::{AgentQuicConnection, AgentQuicListener, AgentQuicSubConnection};
-pub use agent_listener::tcp::{AgentTcpConnection, AgentTcpListener, AgentTcpSubConnection};
-pub use agent_listener::{
-    AgentConnection, AgentConnectionHandler, AgentIncomingConnHandlerDummy, AgentListener,
-    AgentSubConnection,
+use agent::{
+    quic::AgentQuicListener,
+    tcp::{AgentTcpListener, TunnelTcpStream},
+    AgentId, AgentListener, AgentListenerEvent, AgentSession, AgentSessionId,
 };
-pub use atm0s_sdn;
-pub use proxy_listener::cluster::{
-    make_quinn_client, make_quinn_server, AliasSdk, VirtualNetwork, VirtualUdpSocket,
+use anyhow::{anyhow, Ok};
+use proxy::{
+    http::HttpDestinationDetector, rtsp::RtspDestinationDetector, tls::TlsDestinationDetector,
+    ProxyDestination, ProxyTcpListener,
 };
-pub use quinn;
+use quic::TunnelQuicStream;
+use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
+use sdn::{NodeId, UnstructedSdn, UnstrutedSdnRequester};
+use tokio::{
+    io::{copy_bidirectional, AsyncRead, AsyncWrite},
+    select,
+};
 
-pub use proxy_listener::cluster::{run_sdn, ProxyClusterIncomingTunnel, ProxyClusterListener};
-pub use proxy_listener::tcp::{ProxyTcpListener, ProxyTcpTunnel};
-pub use proxy_listener::{ProxyListener, ProxyTunnel};
+mod agent;
+mod proxy;
+mod quic;
+mod sdn;
 
-pub use agent_store::AgentStore;
-pub use proxy_listener::tcp::{HttpDomainDetector, RtspDomainDetector, TlsDomainDetector};
-pub use tunnel::{tunnel_task, TunnelContext};
+pub struct QuicRelayerConfig {
+    node: NodeId,
+    agent_listener: SocketAddr,
+    sdn_listener: SocketAddr,
+    proxy_http_listener: SocketAddr,
+    proxy_tls_listener: SocketAddr,
+    proxy_rtsp_listener: SocketAddr,
+    proxy_rtsps_listener: SocketAddr,
 
-pub async fn run_agent_connection<AG, S, H>(
-    agent_connection: AG,
-    agents: AgentStore,
-    node_alias_sdk: AliasSdk,
-    agent_rpc_handler: H,
-) where
-    AG: AgentConnection<S> + 'static,
-    S: AgentSubConnection + 'static,
-    H: AgentConnectionHandler<S> + 'static,
-{
-    counter!(METRICS_AGENT_COUNT).increment(1);
-    log::info!(
-        "run_agent_connection domain(): {}",
-        agent_connection.domain()
-    );
-    let domain = agent_connection.domain().to_string();
-    let conn_id = agent_connection.conn_id();
-    let (mut agent_worker, proxy_tunnel_tx) =
-        agent_worker::AgentWorker::<AG, ProxyTunnelWrap, S, H>::new(
-            agent_connection,
-            agent_rpc_handler,
-        );
-    let home_id = home_id_from_domain(&domain);
-    log::info!(
-        "run_agent_connection added home_id: {}, conn_id: {}",
-        home_id,
-        conn_id
-    );
-    agents.add(home_id, conn_id, proxy_tunnel_tx);
-    node_alias_sdk.register_alias(home_id).await;
-    let agents = agents.clone();
-    gauge!(METRICS_AGENT_LIVE).increment(1.0);
-    log::info!("run_agent_connection run for domain: {}", domain);
-    loop {
-        match agent_worker.run().await {
-            Ok(Some(())) => {}
-            Ok(None) => {
-                log::info!("run_agent_connection agent_worker closed");
-                break;
-            }
-            Err(e) => {
-                log::error!("run_agent_connection agent_worker error: {}", e);
-                break;
+    agent_key: PrivatePkcs8KeyDer<'static>,
+    agent_cert: CertificateDer<'static>,
+
+    sdn_key: PrivatePkcs8KeyDer<'static>,
+    sdn_cert: CertificateDer<'static>,
+}
+
+pub struct QuicRelayer {
+    agent_quic: AgentQuicListener,
+    agent_tcp: AgentTcpListener,
+    http_proxy: ProxyTcpListener<HttpDestinationDetector>,
+    tls_proxy: ProxyTcpListener<TlsDestinationDetector>,
+    rtsp_proxy: ProxyTcpListener<RtspDestinationDetector>,
+    rtsps_proxy: ProxyTcpListener<TlsDestinationDetector>,
+    sdn: UnstructedSdn,
+
+    agent_quic_sessions: HashMap<AgentId, HashMap<AgentSessionId, AgentSession<TunnelQuicStream>>>,
+    agent_tcp_sessions: HashMap<AgentId, HashMap<AgentSessionId, AgentSession<TunnelTcpStream>>>,
+}
+
+impl QuicRelayer {
+    pub async fn new(cfg: QuicRelayerConfig) -> anyhow::Result<Self> {
+        Ok(Self {
+            agent_quic: AgentQuicListener::new(cfg.agent_listener, cfg.agent_key, cfg.agent_cert)
+                .await?,
+            agent_tcp: AgentTcpListener::new(cfg.agent_listener).await?,
+            http_proxy: ProxyTcpListener::new(cfg.proxy_http_listener, Default::default()).await?,
+            tls_proxy: ProxyTcpListener::new(cfg.proxy_http_listener, Default::default()).await?,
+            rtsp_proxy: ProxyTcpListener::new(cfg.proxy_http_listener, Default::default()).await?,
+            rtsps_proxy: ProxyTcpListener::new(cfg.proxy_http_listener, Default::default()).await?,
+            sdn: UnstructedSdn::new(cfg.node, cfg.sdn_listener, cfg.sdn_key, cfg.sdn_cert).await?,
+
+            agent_quic_sessions: HashMap::new(),
+            agent_tcp_sessions: HashMap::new(),
+        })
+    }
+
+    fn process_proxy<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(
+        &mut self,
+        proxy: T,
+        dest: ProxyDestination,
+    ) {
+        let agent_id = dest.agent_id();
+        if let Some(sessions) = self.agent_tcp_sessions.get(&agent_id) {
+            let session = sessions.values().next().expect("should have session");
+            tokio::spawn(proxy_local(proxy, dest, session.clone()));
+        } else if let Some(sessions) = self.agent_quic_sessions.get(&agent_id) {
+            let session = sessions.values().next().expect("should have session");
+            tokio::spawn(proxy_local(proxy, dest, session.clone()));
+        } else {
+            let sdn_requester = self.sdn.requester();
+            tokio::spawn(proxy_cluster(proxy, dest, sdn_requester));
+        }
+    }
+
+    pub async fn recv(&mut self) -> anyhow::Result<()> {
+        select! {
+            tunnel = self.http_proxy.recv() => {
+                let (dest, tunnel) = tunnel?;
+                self.process_proxy(tunnel, dest);
+                Ok(())
+            },
+            tunnel = self.tls_proxy.recv() => {
+                let (dest, tunnel) = tunnel?;
+                self.process_proxy(tunnel, dest);
+                Ok(())
+            },
+            tunnel = self.rtsp_proxy.recv() => {
+                let (dest, tunnel) = tunnel?;
+                self.process_proxy(tunnel, dest);
+                Ok(())
+            },
+            tunnel = self.rtsps_proxy.recv() => {
+                let (dest, tunnel) = tunnel?;
+                self.process_proxy(tunnel, dest);
+                Ok(())
+            },
+            _ = self.sdn.recv() =>  {
+                Ok(())
+            },
+            event = self.agent_quic.recv() => match event? {
+                AgentListenerEvent::Connected(agent_id, agent_session) => {
+                    self.agent_quic_sessions.entry(agent_id).or_default().insert(agent_session.session_id(), agent_session);
+                    Ok(())
+                },
+                AgentListenerEvent::Disconnected(agent_id, session_id) => {
+                    if let Some(sessions) = self.agent_quic_sessions.get_mut(&agent_id) {
+                        sessions.remove(&session_id);
+                        if sessions.is_empty() {
+                            self.agent_quic_sessions.remove(&agent_id);
+                        }
+                    }
+                    Ok(())
+                },
+            },
+            event = self.agent_tcp.recv() => match event? {
+                AgentListenerEvent::Connected(agent_id, agent_session) => {
+                    self.agent_tcp_sessions.entry(agent_id).or_default().insert(agent_session.session_id(), agent_session);
+                    Ok(())
+                },
+                AgentListenerEvent::Disconnected(agent_id, session_id) => {
+                    if let Some(sessions) = self.agent_tcp_sessions.get_mut(&agent_id) {
+                        sessions.remove(&session_id);
+                        if sessions.is_empty() {
+                            self.agent_tcp_sessions.remove(&agent_id);
+                        }
+                    }
+                    Ok(())
+                },
             }
         }
     }
-    let removed = agents.remove(home_id, conn_id);
-    log::info!(
-        "run_agent_connection remove home_id: {}, conn_id: {}, removed: {}",
-        home_id,
-        conn_id,
-        removed
-    );
-    if removed {
-        node_alias_sdk.unregister_alias(home_id).await;
-    }
-    log::info!(
-        "run_agent_connection agent_worker exit for domain: {}",
-        domain
-    );
-    gauge!(METRICS_AGENT_LIVE).decrement(1.0);
+}
+
+async fn proxy_local<
+    T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static,
+    S: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static,
+>(
+    mut proxy: T,
+    dest: ProxyDestination,
+    agent: AgentSession<S>,
+) -> anyhow::Result<()> {
+    let mut stream = agent.create_stream().await?;
+    let res = copy_bidirectional(&mut proxy, &mut stream).await?;
+    log::info!("[ProxyLocal] done with res {res:?}");
+    Ok(())
+}
+
+async fn proxy_cluster<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(
+    mut proxy: T,
+    dest: ProxyDestination,
+    sdn_requester: UnstrutedSdnRequester,
+) -> anyhow::Result<()> {
+    let agent_id = dest.agent_id();
+    let dest_node = sdn_requester
+        .find_alias(*agent_id)
+        .await?
+        .ok_or(anyhow!("ALIAS_NOT_FOUND"))?;
+    let mut stream = sdn_requester.create_stream_to(dest_node).await?;
+    let res = copy_bidirectional(&mut proxy, &mut stream).await?;
+    log::info!("[ProxyCluster] over {dest_node} done with res {res:?}");
+    Ok(())
 }
