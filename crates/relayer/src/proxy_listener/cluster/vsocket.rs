@@ -1,10 +1,11 @@
+use parking_lot::Mutex;
 use std::{
     fmt::Debug,
     io::IoSliceMut,
     net::{SocketAddr, SocketAddrV4},
     ops::DerefMut,
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::Arc,
     task::{Context, Poll},
 };
 
@@ -92,7 +93,7 @@ impl AsyncUdpSocket for VirtualUdpSocket {
         bufs: &mut [IoSliceMut<'_>],
         meta: &mut [RecvMeta],
     ) -> Poll<std::io::Result<usize>> {
-        let mut rx = self.rx.lock().expect("Should lock mutex");
+        let mut rx = self.rx.lock();
         match rx.poll_recv(cx) {
             std::task::Poll::Pending => std::task::Poll::Pending,
             std::task::Poll::Ready(Some(pkt)) => {
