@@ -2,7 +2,7 @@ use peer_internal::PeerConnectionInternal;
 use quinn::{Connecting, Connection, Incoming, RecvStream, SendStream};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
-use super::{msg::PeerMessage, InternalEvent, NodeAddress};
+use super::{msg::PeerMessage, InternalEvent, PeerAddress};
 
 mod peer_internal;
 
@@ -11,7 +11,7 @@ enum PeerConnectionControl {
 }
 
 pub struct PeerConnection {
-    remote: NodeAddress,
+    remote: PeerAddress,
     connected: bool,
     control_tx: Sender<PeerConnectionControl>,
 }
@@ -19,7 +19,7 @@ pub struct PeerConnection {
 impl PeerConnection {
     pub fn new_incoming(incoming: Incoming, internal_tx: Sender<InternalEvent>) -> Self {
         let (control_tx, control_rx) = channel(10);
-        let remote: NodeAddress = incoming.remote_address().into();
+        let remote: PeerAddress = incoming.remote_address().into();
         tokio::spawn(async move {
             log::info!("[PeerConnection] wait incoming from {remote}");
             match incoming.await {
@@ -38,7 +38,7 @@ impl PeerConnection {
 
     pub fn new_connecting(connecting: Connecting, internal_tx: Sender<InternalEvent>) -> Self {
         let (control_tx, control_rx) = channel(10);
-        let remote: NodeAddress = connecting.remote_address().into();
+        let remote: PeerAddress = connecting.remote_address().into();
         tokio::spawn(async move {
             match connecting.await {
                 Ok(connection) => {
@@ -54,7 +54,7 @@ impl PeerConnection {
         Self { remote, connected: false, control_tx }
     }
 
-    pub fn remote(&self) -> NodeAddress {
+    pub fn remote(&self) -> PeerAddress {
         self.remote
     }
 
@@ -71,14 +71,15 @@ impl PeerConnection {
     }
 }
 
-async fn run_connection(remote: NodeAddress, connection: Connection, send: SendStream, recv: RecvStream, internal_tx: Sender<InternalEvent>, control_rx: Receiver<PeerConnectionControl>) {
+async fn run_connection(remote: PeerAddress, connection: Connection, send: SendStream, recv: RecvStream, internal_tx: Sender<InternalEvent>, control_rx: Receiver<PeerConnectionControl>) {
+    let rtt_ms = connection.rtt().as_millis().min(u16::MAX as u128) as u16;
     let mut internal = PeerConnectionInternal::new(connection, send, recv, internal_tx.clone(), control_rx);
     if let Err(e) = internal.start().await {
         log::error!("[PeerConnection] start {remote} response error {e}");
         return;
     }
-    log::info!("[PeerConnection] started {remote}");
-    internal_tx.send(InternalEvent::PeerConnected(remote)).await.expect("should send to main");
+    log::info!("[PeerConnection] started {remote}, rtt: {rtt_ms}");
+    internal_tx.send(InternalEvent::PeerConnected(remote, rtt_ms)).await.expect("should send to main");
     log::info!("[PeerConnection] run loop for {remote}");
     loop {
         if let Err(e) = internal.recv_complex().await {

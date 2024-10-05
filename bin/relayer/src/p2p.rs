@@ -7,7 +7,9 @@ use msg::PeerMessage;
 use peer::PeerConnection;
 use protocol::stream::TunnelStream;
 use quinn::{Endpoint, Incoming, RecvStream, SendStream, VarInt};
+use router::SharedRouterTable;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
+use serde::{Deserialize, Serialize};
 use tokio::{
     select,
     sync::{
@@ -22,31 +24,32 @@ use crate::quic::{make_server_endpoint, TunnelQuicStream};
 mod alias;
 mod msg;
 mod peer;
+mod router;
 
-#[derive(Debug, Display, Clone, Copy, From, Deref, PartialEq, Eq, Hash)]
-pub struct NodeAddress(SocketAddr);
+#[derive(Debug, Display, Clone, Copy, From, Deref, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct PeerAddress(SocketAddr);
 
 pub struct P2pNetworkRequester {
     control_tx: UnboundedSender<ControlCmd>,
 }
 
 enum InternalEvent {
-    PeerConnected(NodeAddress),
-    PeerConnectError(NodeAddress, anyhow::Error),
-    PeerData(NodeAddress, PeerMessage),
-    PeerStream(NodeAddress, TunnelQuicStream),
-    PeerDisconnected(NodeAddress),
+    PeerConnected(PeerAddress, u16),
+    PeerConnectError(PeerAddress, anyhow::Error),
+    PeerData(PeerAddress, PeerMessage),
+    PeerStream(PeerAddress, TunnelQuicStream),
+    PeerDisconnected(PeerAddress),
 }
 
 enum ControlCmd {
-    Connect(NodeAddress, oneshot::Sender<anyhow::Result<()>>),
+    Connect(PeerAddress, oneshot::Sender<anyhow::Result<()>>),
     RegisterAlias(u64, oneshot::Sender<AliasGuard>),
-    FindAlias(u64, oneshot::Sender<anyhow::Result<Option<NodeAddress>>>),
-    CreateStream(NodeAddress, oneshot::Sender<anyhow::Result<TunnelQuicStream>>),
+    FindAlias(u64, oneshot::Sender<anyhow::Result<Option<PeerAddress>>>),
+    CreateStream(PeerAddress, oneshot::Sender<anyhow::Result<TunnelQuicStream>>),
 }
 
 pub enum P2pNetworkEvent {
-    IncomingStream(NodeAddress, TunnelQuicStream),
+    IncomingStream(PeerAddress, TunnelQuicStream),
     Continue,
 }
 
@@ -56,8 +59,9 @@ pub struct P2pNetwork {
     control_rx: UnboundedReceiver<ControlCmd>,
     internal_tx: Sender<InternalEvent>,
     internal_rx: Receiver<InternalEvent>,
-    peer_conns: HashMap<NodeAddress, PeerConnection>,
+    peer_conns: HashMap<PeerAddress, PeerConnection>,
     ticker: Interval,
+    router: SharedRouterTable,
 }
 
 impl P2pNetwork {
@@ -75,6 +79,7 @@ impl P2pNetwork {
             control_tx,
             control_rx,
             ticker: tokio::time::interval(Duration::from_secs(2)),
+            router: SharedRouterTable::default(),
         })
     }
 
@@ -106,7 +111,8 @@ impl P2pNetwork {
 
     fn process_tick(&mut self) -> anyhow::Result<P2pNetworkEvent> {
         for peer in self.peer_conns.values() {
-            if let Err(e) = peer.try_send(PeerMessage::Sync {}) {
+            let sync = self.router.create_sync(&peer.remote());
+            if let Err(e) = peer.try_send(PeerMessage::Sync(sync)) {
                 log::error!("[P2pNetwork] try send message to peer {} error {e}", peer.remote());
             }
         }
@@ -114,7 +120,7 @@ impl P2pNetwork {
     }
 
     fn process_incoming(&mut self, incoming: Incoming) -> anyhow::Result<P2pNetworkEvent> {
-        let remote: NodeAddress = incoming.remote_address().into();
+        let remote: PeerAddress = incoming.remote_address().into();
         if self.peer_conns.contains_key(&remote) {
             log::warn!("[P2pNetwork] incoming connect from {remote} but already existed => reject");
             incoming.refuse();
@@ -128,14 +134,21 @@ impl P2pNetwork {
 
     fn process_internal(&mut self, event: InternalEvent) -> anyhow::Result<P2pNetworkEvent> {
         match event {
-            InternalEvent::PeerConnected(remote) => {
+            InternalEvent::PeerConnected(remote, ttl_ms) => {
                 log::info!("[P2pNetwork] connected to {remote}");
+                self.router.set_direct(remote, ttl_ms);
                 let peer = self.peer_conns.get_mut(&remote).expect("should have peer");
                 peer.set_connected();
                 Ok(P2pNetworkEvent::Continue)
             }
             InternalEvent::PeerData(remote, data) => {
-                log::info!("[P2pNetwork] on data {data:?} from {remote}");
+                log::debug!("[P2pNetwork] on data {data:?} from {remote}");
+                match data {
+                    PeerMessage::Hello {} => {}
+                    PeerMessage::Sync(sync) => {
+                        self.router.apply_sync(remote, sync);
+                    }
+                }
                 Ok(P2pNetworkEvent::Continue)
             }
             InternalEvent::PeerStream(remote, stream) => {
@@ -149,6 +162,7 @@ impl P2pNetwork {
             }
             InternalEvent::PeerDisconnected(remote) => {
                 log::info!("[P2pNetwork] disconnected from {remote}");
+                self.router.del_direct(&remote);
                 self.peer_conns.remove(&remote);
                 Ok(P2pNetworkEvent::Continue)
             }
@@ -177,13 +191,13 @@ impl P2pNetwork {
             }
             ControlCmd::RegisterAlias(_, sender) => todo!(),
             ControlCmd::FindAlias(_, sender) => todo!(),
-            ControlCmd::CreateStream(node_id, sender) => todo!(),
+            ControlCmd::CreateStream(_, sender) => todo!(),
         }
     }
 }
 
 impl P2pNetworkRequester {
-    pub async fn connect(&self, addr: NodeAddress) -> anyhow::Result<()> {
+    pub async fn connect(&self, addr: PeerAddress) -> anyhow::Result<()> {
         let (tx, rx) = oneshot::channel();
         self.control_tx.send(ControlCmd::Connect(addr, tx)).expect("should send to main loop");
         rx.await?
@@ -195,13 +209,13 @@ impl P2pNetworkRequester {
         rx.await.expect("should get from main loop")
     }
 
-    pub async fn find_alias(&self, alias: u64) -> anyhow::Result<Option<NodeAddress>> {
+    pub async fn find_alias(&self, alias: u64) -> anyhow::Result<Option<PeerAddress>> {
         let (tx, rx) = oneshot::channel();
         self.control_tx.send(ControlCmd::FindAlias(alias, tx)).expect("should send to main loop");
         rx.await?
     }
 
-    pub async fn create_stream_to(&self, dest: NodeAddress) -> anyhow::Result<TunnelStream<RecvStream, SendStream>> {
+    pub async fn create_stream_to(&self, dest: PeerAddress) -> anyhow::Result<TunnelStream<RecvStream, SendStream>> {
         let (tx, rx) = oneshot::channel();
         self.control_tx.send(ControlCmd::CreateStream(dest, tx)).expect("should send to main loop");
         rx.await?

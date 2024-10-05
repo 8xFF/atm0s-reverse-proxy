@@ -23,7 +23,7 @@ mod p2p;
 mod proxy;
 mod quic;
 
-pub use p2p::NodeAddress;
+pub use p2p::PeerAddress;
 
 pub struct QuicRelayerConfig {
     pub agent_listener: SocketAddr,
@@ -36,7 +36,7 @@ pub struct QuicRelayerConfig {
     pub agent_key: PrivatePkcs8KeyDer<'static>,
     pub agent_cert: CertificateDer<'static>,
 
-    pub sdn_seeds: Vec<NodeAddress>,
+    pub sdn_seeds: Vec<PeerAddress>,
     pub sdn_key: PrivatePkcs8KeyDer<'static>,
     pub sdn_cert: CertificateDer<'static>,
 }
@@ -50,7 +50,7 @@ pub struct QuicRelayer<VALIDATE, REQ> {
     rtsps_proxy: ProxyTcpListener<TlsDestinationDetector>,
 
     sdn: P2pNetwork,
-    sdn_seeds: Vec<NodeAddress>,
+    sdn_seeds: Vec<PeerAddress>,
 
     agent_quic_sessions: HashMap<AgentId, HashMap<AgentSessionId, AgentSession<TunnelQuicStream>>>,
     agent_tcp_sessions: HashMap<AgentId, HashMap<AgentSessionId, AgentSession<TunnelTcpStream>>>,

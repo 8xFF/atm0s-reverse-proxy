@@ -9,14 +9,14 @@ use tokio::{
 use tokio_util::codec::Framed;
 
 use crate::{
-    p2p::{msg::PeerMessage, InternalEvent, NodeAddress},
+    p2p::{msg::PeerMessage, InternalEvent, PeerAddress},
     quic::TunnelQuicStream,
 };
 
 use super::PeerConnectionControl;
 
 pub struct PeerConnectionInternal {
-    remote: NodeAddress,
+    remote: PeerAddress,
     connection: Connection,
     framed: Framed<TunnelQuicStream, BincodeCodec<PeerMessage>>,
     internal_tx: Sender<InternalEvent>,
