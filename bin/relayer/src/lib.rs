@@ -19,7 +19,6 @@ use tokio::{
 };
 
 mod agent;
-mod p2p;
 mod proxy;
 mod quic;
 

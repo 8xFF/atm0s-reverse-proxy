@@ -210,9 +210,8 @@ impl SharedRouterTable {
 
 #[cfg(test)]
 mod tests {
+    use crate::{router::RouterTableSync, PeerAddress};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-
-    use crate::{p2p::router::RouterTableSync, PeerAddress};
 
     use super::{RouterTable, MAX_HOPS};
 

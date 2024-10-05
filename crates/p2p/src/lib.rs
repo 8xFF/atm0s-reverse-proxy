@@ -6,11 +6,11 @@ use derive_more::derive::{Deref, Display, From};
 use discovery::PeerDiscovery;
 use msg::PeerMessage;
 use peer::PeerConnection;
-use protocol::{stream::TunnelStream, time::now_ms};
 use quinn::{Endpoint, Incoming, RecvStream, SendStream, VarInt};
 use router::SharedRouterTable;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use serde::{Deserialize, Serialize};
+use stream::QuicStream;
 use tokio::{
     select,
     sync::{
@@ -19,14 +19,18 @@ use tokio::{
     },
     time::Interval,
 };
+use utils::now_ms;
 
-use crate::quic::{make_server_endpoint, TunnelQuicStream};
+use crate::quic::make_server_endpoint;
 
 mod alias;
 mod discovery;
 mod msg;
 mod peer;
+mod quic;
 mod router;
+mod stream;
+mod utils;
 
 #[derive(Debug, Display, Clone, Copy, From, Deref, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PeerAddress(SocketAddr);
@@ -39,7 +43,7 @@ enum InternalEvent {
     PeerConnected(PeerAddress, u16),
     PeerConnectError(PeerAddress, anyhow::Error),
     PeerData(PeerAddress, PeerMessage),
-    PeerStream(PeerAddress, TunnelQuicStream),
+    PeerStream(PeerAddress, QuicStream),
     PeerDisconnected(PeerAddress),
 }
 
@@ -47,7 +51,7 @@ enum ControlCmd {
     Connect(PeerAddress, Option<oneshot::Sender<anyhow::Result<()>>>),
     RegisterAlias(u64, oneshot::Sender<AliasGuard>),
     FindAlias(u64, oneshot::Sender<anyhow::Result<Option<PeerAddress>>>),
-    CreateStream(PeerAddress, oneshot::Sender<anyhow::Result<TunnelQuicStream>>),
+    CreateStream(PeerAddress, oneshot::Sender<anyhow::Result<QuicStream>>),
 }
 
 #[derive(Default)]
@@ -56,7 +60,7 @@ struct NetworkNeighbours {
 }
 
 pub enum P2pNetworkEvent {
-    IncomingStream(PeerAddress, TunnelQuicStream),
+    IncomingStream(PeerAddress, QuicStream),
     Continue,
 }
 
@@ -236,7 +240,7 @@ impl P2pNetworkRequester {
         rx.await?
     }
 
-    pub async fn create_stream_to(&self, dest: PeerAddress) -> anyhow::Result<TunnelStream<RecvStream, SendStream>> {
+    pub async fn create_stream_to(&self, dest: PeerAddress) -> anyhow::Result<QuicStream> {
         let (tx, rx) = oneshot::channel();
         self.control_tx.send(ControlCmd::CreateStream(dest, tx)).expect("should send to main loop");
         rx.await?

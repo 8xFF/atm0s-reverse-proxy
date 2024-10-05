@@ -61,7 +61,7 @@ impl PeerDiscovery {
 mod test {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-    use crate::{p2p::discovery::PeerDiscoverySync, PeerAddress};
+    use crate::{discovery::PeerDiscoverySync, PeerAddress};
 
     use super::{PeerDiscovery, TIMEOUT_AFTER};
 

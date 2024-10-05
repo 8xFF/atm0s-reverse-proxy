@@ -1,6 +1,5 @@
 use anyhow::anyhow;
 use futures::{SinkExt, StreamExt};
-use protocol::bincode_stream::BincodeCodec;
 use quinn::{Connection, RecvStream, SendStream};
 use tokio::{
     select,
@@ -9,8 +8,9 @@ use tokio::{
 use tokio_util::codec::Framed;
 
 use crate::{
-    p2p::{msg::PeerMessage, InternalEvent, PeerAddress},
-    quic::TunnelQuicStream,
+    msg::PeerMessage,
+    stream::{BincodeCodec, QuicStream},
+    InternalEvent, PeerAddress,
 };
 
 use super::PeerConnectionControl;
@@ -18,14 +18,14 @@ use super::PeerConnectionControl;
 pub struct PeerConnectionInternal {
     remote: PeerAddress,
     connection: Connection,
-    framed: Framed<TunnelQuicStream, BincodeCodec<PeerMessage>>,
+    framed: Framed<QuicStream, BincodeCodec<PeerMessage>>,
     internal_tx: Sender<InternalEvent>,
     control_rx: Receiver<PeerConnectionControl>,
 }
 
 impl PeerConnectionInternal {
     pub fn new(connection: Connection, main_send: SendStream, main_recv: RecvStream, internal_tx: Sender<InternalEvent>, control_rx: Receiver<PeerConnectionControl>) -> Self {
-        let stream = TunnelQuicStream::new(main_recv, main_send);
+        let stream = QuicStream::new(main_recv, main_send);
         Self {
             remote: connection.remote_address().into(),
             connection,
