@@ -103,7 +103,7 @@ async fn connect(client: usize, args: Args, registry: Arc<dyn ServiceRegistry>) 
                     run_connection_loop(conn, registry.clone()).await;
                 }
                 Err(e) => {
-                    log::error!("Connect to connector via tcp error: {}", e);
+                    log::error!("Connect to connector via tcp error: {e}");
                 }
             },
             Protocol::Quic => match QuicConnection::new(args.connector_addr.clone(), &agent_signer, &server_certs, args.allow_quic_insecure).await {
@@ -113,7 +113,7 @@ async fn connect(client: usize, args: Args, registry: Arc<dyn ServiceRegistry>) 
                     run_connection_loop(conn, registry.clone()).await;
                 }
                 Err(e) => {
-                    log::error!("Connect to connector via quic error: {}", e);
+                    log::error!("Connect to connector via quic error: {e}");
                 }
             },
         }

@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use peer_internal::PeerConnectionInternal;
 use quinn::{Connecting, Connection, Incoming, RecvStream, SendStream};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -62,12 +63,24 @@ impl PeerConnection {
         self.connected = true;
     }
 
+    pub fn is_connected(&self) -> bool {
+        self.connected
+    }
+
     pub async fn send(&self, msg: PeerMessage) -> anyhow::Result<()> {
-        Ok(self.control_tx.send(PeerConnectionControl::Send(msg)).await?)
+        if self.connected {
+            Ok(self.control_tx.send(PeerConnectionControl::Send(msg)).await?)
+        } else {
+            Err(anyhow!("not connected"))
+        }
     }
 
     pub fn try_send(&self, msg: PeerMessage) -> anyhow::Result<()> {
-        Ok(self.control_tx.try_send(PeerConnectionControl::Send(msg))?)
+        if self.connected {
+            Ok(self.control_tx.try_send(PeerConnectionControl::Send(msg))?)
+        } else {
+            Err(anyhow!("not connected"))
+        }
     }
 }
 

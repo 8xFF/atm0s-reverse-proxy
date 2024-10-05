@@ -39,6 +39,7 @@ pub struct QuicRelayerConfig {
     pub sdn_seeds: Vec<PeerAddress>,
     pub sdn_key: PrivatePkcs8KeyDer<'static>,
     pub sdn_cert: CertificateDer<'static>,
+    pub sdn_advertise_address: Option<SocketAddr>,
 }
 
 pub struct QuicRelayer<VALIDATE, REQ> {
@@ -68,7 +69,7 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
             rtsp_proxy: ProxyTcpListener::new(cfg.proxy_rtsp_listener, Default::default()).await?,
             rtsps_proxy: ProxyTcpListener::new(cfg.proxy_rtsps_listener, Default::default()).await?,
 
-            sdn: P2pNetwork::new(cfg.sdn_listener, cfg.sdn_key, cfg.sdn_cert).await?,
+            sdn: P2pNetwork::new(cfg.sdn_listener, cfg.sdn_advertise_address, cfg.sdn_key, cfg.sdn_cert).await?,
             sdn_seeds: cfg.sdn_seeds,
 
             agent_quic_sessions: HashMap::new(),

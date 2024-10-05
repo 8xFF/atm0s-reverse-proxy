@@ -5,4 +5,5 @@ RUST_LOG=info cargo run -- \
     --proxy-rtsps-listener 0.0.0.0:35341 \
     --agent-listener 0.0.0.0:13001 \
     --root-domain local.ha.8xff.io \
-    --sdn-listener 127.0.0.1:14001 \
+    --sdn-listener 0.0.0.0:14001 \
+    --sdn-advertise-address 127.0.0.1:14001 \

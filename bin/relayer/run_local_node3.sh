@@ -6,4 +6,4 @@ RUST_LOG=info cargo run -- \
     --agent-listener 0.0.0.0:13003 \
     --root-domain local.ha.8xff.io \
     --sdn-listener 127.0.0.1:14003 \
-    --sdn-seeds 127.0.0.1:14001 \
+    --sdn-seeds 127.0.0.1:14002 \

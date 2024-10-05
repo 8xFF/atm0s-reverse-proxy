@@ -27,6 +27,12 @@ struct Args {
     #[arg(env, long, value_delimiter = ',')]
     sdn_seeds: Vec<SocketAddr>,
 
+    /// Allow it broadcast address to other peers
+    /// This allows other peer can active connect to this node
+    /// This option is useful with high performance relay node
+    #[arg(env, long)]
+    sdn_advertise_address: Option<SocketAddr>,
+
     /// TCP port for serving HTTP connection
     #[arg(env, long, default_value = "0.0.0.0:80")]
     proxy_http_listener: SocketAddr,
@@ -75,6 +81,7 @@ async fn main() {
         sdn_key: default_cluster_key,
         sdn_cert: default_cluster_cert,
         sdn_seeds: args.sdn_seeds.into_iter().map(|a| a.into()).collect::<Vec<_>>(),
+        sdn_advertise_address: args.sdn_advertise_address,
     };
     let validator = ClusterValidatorImpl::new(args.root_domain);
     let mut relayer = QuicRelayer::new(cfg, validator).await.expect("should create relayer");
