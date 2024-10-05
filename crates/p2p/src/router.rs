@@ -28,19 +28,34 @@ impl From<(u8, u16)> for PathMetric {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RouterTableSync(Vec<(PeerAddress, PathMetric)>);
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct PeerMemory {
     best: Option<PeerAddress>,
     paths: BTreeMap<PeerAddress, PathMetric>,
 }
 
-#[derive(Default)]
+#[derive(Debug, PartialEq, Eq)]
+pub enum RouteAction {
+    Local,
+    Next(PeerAddress),
+}
+
+#[derive(Debug)]
 pub struct RouterTable {
+    address: PeerAddress,
     peers: BTreeMap<PeerAddress, PeerMemory>,
     directs: BTreeMap<PeerAddress, PathMetric>,
 }
 
 impl RouterTable {
+    pub fn new(address: PeerAddress) -> Self {
+        Self {
+            address,
+            peers: Default::default(),
+            directs: Default::default(),
+        }
+    }
+
     pub fn create_sync(&self, dest: &PeerAddress) -> RouterTableSync {
         RouterTableSync(
             self.peers
@@ -108,12 +123,17 @@ impl RouterTable {
         }
     }
 
-    pub fn next(&self, next: PeerAddress) -> Option<PeerAddress> {
-        self.peers.get(&next)?.best()
+    pub fn action(&self, next: &PeerAddress) -> Option<RouteAction> {
+        if self.address.eq(next) {
+            Some(RouteAction::Local)
+        } else {
+            self.peers.get(next)?.best().map(RouteAction::Next)
+        }
     }
 
-    pub fn next_with_details(&self, next: PeerAddress) -> Option<(PeerAddress, PathMetric)> {
-        let memory = self.peers.get(&next)?;
+    /// Get next remote
+    pub fn next_remote(&self, next: &PeerAddress) -> Option<(PeerAddress, PathMetric)> {
+        let memory = self.peers.get(next)?;
         let best = memory.best()?;
         let metric = memory.best_metric().expect("should have metric");
         Some((best, metric))
@@ -177,12 +197,18 @@ impl PeerMemory {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct SharedRouterTable {
     table: Arc<RwLock<RouterTable>>,
 }
 
 impl SharedRouterTable {
+    pub fn new(address: PeerAddress) -> Self {
+        Self {
+            table: Arc::new(RwLock::new(RouterTable::new(address))),
+        }
+    }
+
     pub fn create_sync(&self, dest: &PeerAddress) -> RouterTableSync {
         self.table.read().create_sync(&dest)
     }
@@ -199,12 +225,12 @@ impl SharedRouterTable {
         self.table.write().del_direct(from);
     }
 
-    pub fn next(&self, next: PeerAddress) -> Option<PeerAddress> {
-        self.table.read().next(next)
+    pub fn action(&self, next: &PeerAddress) -> Option<RouteAction> {
+        self.table.read().action(next)
     }
 
-    pub fn next_with_details(&self, next: PeerAddress) -> Option<(PeerAddress, PathMetric)> {
-        self.table.read().next_with_details(next)
+    pub fn next_remote(&self, next: &PeerAddress) -> Option<(PeerAddress, PathMetric)> {
+        self.table.read().next_remote(next)
     }
 }
 
@@ -213,15 +239,21 @@ mod tests {
     use crate::{router::RouterTableSync, PeerAddress};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-    use super::{RouterTable, MAX_HOPS};
+    use super::{RouteAction, RouterTable, MAX_HOPS};
 
     fn create_peer(i: u16) -> PeerAddress {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), i).into()
     }
 
     #[test_log::test]
+    fn route_local() {
+        let table = RouterTable::new(create_peer(0));
+        assert_eq!(table.action(&create_peer(0)), Some(RouteAction::Local));
+    }
+
+    #[test_log::test]
     fn create_correct_direct_sync() {
-        let mut table = RouterTable::default();
+        let mut table = RouterTable::new(create_peer(0));
 
         let peer1 = create_peer(1);
         let peer2 = create_peer(2);
@@ -230,9 +262,9 @@ mod tests {
         table.set_direct(peer1, 100);
         table.set_direct(peer2, 200);
 
-        assert_eq!(table.next_with_details(peer1), Some((peer1, (0, 100).into())));
-        assert_eq!(table.next_with_details(peer2), Some((peer2, (0, 200).into())));
-        assert_eq!(table.next_with_details(peer3), None);
+        assert_eq!(table.next_remote(&peer1), Some((peer1, (0, 100).into())));
+        assert_eq!(table.next_remote(&peer2), Some((peer2, (0, 200).into())));
+        assert_eq!(table.next_remote(&peer3), None);
 
         assert_eq!(table.create_sync(&peer1), RouterTableSync(vec![(peer2, (0, 200).into())]));
         assert_eq!(table.create_sync(&peer2), RouterTableSync(vec![(peer1, (0, 100).into())]));
@@ -240,7 +272,7 @@ mod tests {
 
     #[test_log::test]
     fn apply_correct_direct_sync() {
-        let mut table = RouterTable::default();
+        let mut table = RouterTable::new(create_peer(0));
 
         let peer1 = create_peer(1);
         let peer2 = create_peer(2);
@@ -253,9 +285,9 @@ mod tests {
         table.apply_sync(peer1, RouterTableSync(vec![(peer2, (0, 200).into())]));
 
         // now we have NODO => peer1 => peer2
-        assert_eq!(table.next_with_details(peer1), Some((peer1, (0, 100).into())));
-        assert_eq!(table.next_with_details(peer2), Some((peer1, (1, 300).into())));
-        assert_eq!(table.next(peer3), None);
+        assert_eq!(table.next_remote(&peer1), Some((peer1, (0, 100).into())));
+        assert_eq!(table.next_remote(&peer2), Some((peer1, (1, 300).into())));
+        assert_eq!(table.next_remote(&peer3), None);
 
         // we seems to have loop with peer2 here but it will not effect to routing because we have direct connection, it will always has lower rtt
         assert_eq!(table.create_sync(&peer1), RouterTableSync(vec![(peer2, (1, 300).into()), (peer4, (0, 400).into())]));
@@ -264,7 +296,7 @@ mod tests {
 
     #[test_log::test]
     fn dont_create_sync_over_max_hops() {
-        let mut table = RouterTable::default();
+        let mut table = RouterTable::new(create_peer(0));
 
         let peer1 = create_peer(1);
         let peer2 = create_peer(2);
@@ -274,7 +306,7 @@ mod tests {
         table.set_direct(peer3, 300);
 
         table.apply_sync(peer1, RouterTableSync(vec![(peer2, (MAX_HOPS, 200).into())]));
-        assert_eq!(table.next_with_details(peer2), Some((peer1, (MAX_HOPS + 1, 300).into())));
+        assert_eq!(table.next_remote(&peer2), Some((peer1, (MAX_HOPS + 1, 300).into())));
 
         // we shouldn't create sync with peer2 because it over MAX_HOPS
         assert_eq!(table.create_sync(&peer3), RouterTableSync(vec![(peer1, (0, 100).into())]));

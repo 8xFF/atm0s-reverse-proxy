@@ -1,6 +1,7 @@
 use std::fmt::{Display, Write};
 
 use derive_more::derive::{Deref, Display, From};
+use p2p::AliasGuard;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::{mpsc::Sender, oneshot},
@@ -36,11 +37,22 @@ pub struct AgentSession<S> {
     agent_id: AgentId,
     session_id: AgentSessionId,
     control_tx: Sender<AgentSessionControl<S>>,
+    alias_guard: Option<AliasGuard>,
 }
 
 impl<S> AgentSession<S> {
     fn new(agent_id: AgentId, session_id: AgentSessionId, control_tx: Sender<AgentSessionControl<S>>) -> Self {
-        Self { agent_id, session_id, control_tx }
+        Self {
+            agent_id,
+            session_id,
+            control_tx,
+            alias_guard: None,
+        }
+    }
+
+    /// We keep this alias guard here fore automatic unregister when session destroyed
+    pub(super) fn set_alias_guard(&mut self, alias: AliasGuard) {
+        self.alias_guard = Some(alias);
     }
 }
 
@@ -50,6 +62,7 @@ impl<S> Clone for AgentSession<S> {
             agent_id: self.agent_id,
             session_id: self.session_id,
             control_tx: self.control_tx.clone(),
+            alias_guard: self.alias_guard.clone(),
         }
     }
 }

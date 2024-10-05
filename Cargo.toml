@@ -42,6 +42,7 @@ parking_lot = "0.12"
 futures = "0.3"
 tokio-util = "0.7"
 test-log = "0.2"
+lru = "0.12"
 
 [profile.release]
 strip = true  # Automatically strip symbols from the binary.

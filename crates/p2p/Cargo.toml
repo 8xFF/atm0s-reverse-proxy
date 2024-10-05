@@ -6,7 +6,7 @@ description = "A lightweight peer-to-peer network utilizing the atm0s routing me
 license = "MIT"
 
 [dependencies]
-tokio = { workspace = true, default-features = false, features = ["io-util", "sync"] }
+tokio = { workspace = true, features = ["io-util", "sync"] }
 anyhow = { workspace = true }
 quinn = { workspace = true, features = ["ring", "runtime-tokio", "futures-io"] }
 rustls = { workspace = true, features = ["ring", "std"] }
@@ -18,6 +18,7 @@ rand = { workspace = true }
 futures = { workspace = true }
 bincode = { workspace = true }
 tokio-util = { workspace = true }
+lru = { workspace = true }
 
 [dev-dependencies]
 test-log = { workspace = true }

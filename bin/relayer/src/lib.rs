@@ -6,7 +6,7 @@ use agent::{
     AgentId, AgentListener, AgentListenerEvent, AgentSession, AgentSessionId,
 };
 use anyhow::{anyhow, Ok};
-use p2p::{P2pNetwork, P2pNetworkRequester};
+use p2p::{P2pNetwork, P2pNetworkConfig, P2pService, P2pServiceBuilder, P2pServiceEvent, P2pServiceRequester};
 use protocol::key::ClusterValidator;
 use proxy::{http::HttpDestinationDetector, rtsp::RtspDestinationDetector, tls::TlsDestinationDetector, ProxyDestination, ProxyTcpListener};
 use quic::TunnelQuicStream;
@@ -52,6 +52,8 @@ pub struct QuicRelayer<VALIDATE, REQ> {
     sdn: P2pNetwork,
     sdn_seeds: Vec<PeerAddress>,
 
+    sdn_proxy_service: P2pService,
+
     agent_quic_sessions: HashMap<AgentId, HashMap<AgentSessionId, AgentSession<TunnelQuicStream>>>,
     agent_tcp_sessions: HashMap<AgentId, HashMap<AgentSessionId, AgentSession<TunnelTcpStream>>>,
 
@@ -60,6 +62,18 @@ pub struct QuicRelayer<VALIDATE, REQ> {
 
 impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'static> QuicRelayer<VALIDATE, REQ> {
     pub async fn new(cfg: QuicRelayerConfig, validate: VALIDATE) -> anyhow::Result<Self> {
+        let mut channels = P2pServiceBuilder::default();
+
+        let sdn_proxy_service = channels.add(0);
+
+        let network_cfg = P2pNetworkConfig {
+            addr: cfg.sdn_listener,
+            advertise: cfg.sdn_advertise_address,
+            priv_key: cfg.sdn_key,
+            cert: cfg.sdn_cert,
+            services: channels,
+        };
+
         Ok(Self {
             agent_quic: AgentQuicListener::new(cfg.agent_listener, cfg.agent_key, cfg.agent_cert, validate).await?,
             agent_tcp: AgentTcpListener::new(cfg.agent_listener).await?,
@@ -68,8 +82,10 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
             rtsp_proxy: ProxyTcpListener::new(cfg.proxy_rtsp_listener, Default::default()).await?,
             rtsps_proxy: ProxyTcpListener::new(cfg.proxy_rtsps_listener, Default::default()).await?,
 
-            sdn: P2pNetwork::new(cfg.sdn_listener, cfg.sdn_advertise_address, cfg.sdn_key, cfg.sdn_cert).await?,
+            sdn: P2pNetwork::new(network_cfg).await?,
             sdn_seeds: cfg.sdn_seeds,
+
+            sdn_proxy_service,
 
             agent_quic_sessions: HashMap::new(),
             agent_tcp_sessions: HashMap::new(),
@@ -87,7 +103,7 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
             let session = sessions.values().next().expect("should have session");
             tokio::spawn(proxy_local(proxy, dest, session.clone()));
         } else {
-            let sdn_requester = self.sdn.requester();
+            let sdn_requester = self.sdn_proxy_service.requester();
             tokio::spawn(proxy_cluster(proxy, dest, sdn_requester));
         }
     }
@@ -134,8 +150,10 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
                 Ok(())
             },
             event = self.agent_quic.recv() => match event? {
-                AgentListenerEvent::Connected(agent_id, agent_session) => {
+                AgentListenerEvent::Connected(agent_id, mut agent_session) => {
                     log::info!("[QuicRelayer] agent {agent_id} {} connected", agent_session.session_id());
+                    let alias = self.sdn_proxy_service.register_alias(*agent_id);
+                    agent_session.set_alias_guard(alias);
                     self.agent_quic_sessions.entry(agent_id).or_default().insert(agent_session.session_id(), agent_session);
                     Ok(())
                 },
@@ -156,10 +174,11 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
                 },
             },
             event = self.agent_tcp.recv() => match event? {
-                AgentListenerEvent::Connected(agent_id, agent_session) => {
+                AgentListenerEvent::Connected(agent_id, mut agent_session) => {
                     log::info!("[QuicRelayer] agent {agent_id} {} connected", agent_session.session_id());
-                    let entry = self.agent_tcp_sessions.entry(agent_id).or_default();
-                    entry.insert(agent_session.session_id(), agent_session);
+                    let alias = self.sdn_proxy_service.register_alias(*agent_id);
+                    agent_session.set_alias_guard(alias);
+                    self.agent_tcp_sessions.entry(agent_id).or_default().insert(agent_session.session_id(), agent_session);
                     Ok(())
                 },
                 AgentListenerEvent::IncomingStream(agent_id, stream) => {
@@ -177,6 +196,11 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
                     }
                     Ok(())
                 },
+            },
+            event = self.sdn_proxy_service.recv() => match event.expect("sdn channel crash") {
+                P2pServiceEvent::Unicast(peer_address, vec) => todo!(),
+                P2pServiceEvent::Broadcast(peer_address, vec) => todo!(),
+                P2pServiceEvent::Stream(peer_address, vec, p2p_quic_stream) => todo!(),
             },
             _ = tokio::signal::ctrl_c() => {
                 log::info!("[QuicRelayer] shutdown inprogress");
@@ -196,15 +220,19 @@ async fn proxy_local<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static, 
     agent: AgentSession<S>,
 ) -> anyhow::Result<()> {
     let mut stream = agent.create_stream().await?;
+    // TODO write req
     let res = copy_bidirectional(&mut proxy, &mut stream).await?;
     log::info!("[ProxyLocal] done with res {res:?}");
     Ok(())
 }
 
-async fn proxy_cluster<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(mut proxy: T, dest: ProxyDestination, sdn_requester: P2pNetworkRequester) -> anyhow::Result<()> {
+async fn proxy_cluster<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(mut proxy: T, dest: ProxyDestination, sdn_requester: P2pServiceRequester) -> anyhow::Result<()> {
     let agent_id = dest.agent_id();
     let dest_node = sdn_requester.find_alias(*agent_id).await?.ok_or(anyhow!("ALIAS_NOT_FOUND"))?;
-    let mut stream = sdn_requester.create_stream_to(dest_node).await?;
+    let mut stream = sdn_requester.open_stream(dest_node, vec![]).await?;
+
+    // TODO write req
+
     let res = copy_bidirectional(&mut proxy, &mut stream).await?;
     log::info!("[ProxyCluster] over {dest_node} done with res {res:?}");
     Ok(())
