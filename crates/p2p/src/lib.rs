@@ -164,7 +164,6 @@ impl P2pNetwork {
             }
         }
         for addr in self.discovery.remotes() {
-            log::info!("sending connect to {addr}");
             self.control_tx.send(ControlCmd::Connect(*addr, None))?;
         }
         Ok(P2pNetworkEvent::Continue)

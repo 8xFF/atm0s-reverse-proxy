@@ -117,7 +117,10 @@ impl PeerConnectionInternal {
                     }
 
                     if let Some(service) = self.ctx.get_service(&service_id) {
+                        log::debug!("[PeerConnectionInternal {}] broadcast msg {msg_id} to service {service_id}", self.remote);
                         service.try_send(P2pServiceEvent::Broadcast(source, data)).print_on_err("[PeerConnectionInternal] send service msg");
+                    } else {
+                        log::warn!("[PeerConnectionInternal {}] broadcast msg to unknown service {service_id}", self.remote);
                     }
                 } else {
                     log::debug!("[PeerConnectionInternal {}] broadcast msg {msg_id} already deliveried", self.remote);

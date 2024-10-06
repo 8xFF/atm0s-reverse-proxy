@@ -52,7 +52,7 @@ impl SharedCtxInternal {
     /// if is not, it return true and save to cache list
     /// if already it return false and do nothing
     fn check_broadcast_msg(&mut self, id: BroadcastMsgId) -> bool {
-        if self.received_broadcast_msg.contains(&id) {
+        if !self.received_broadcast_msg.contains(&id) {
             self.received_broadcast_msg.get_or_insert(id, || ());
             true
         } else {
@@ -146,7 +146,9 @@ impl SharedCtx {
         let msg_id = BroadcastMsgId::rand();
         self.check_broadcast_msg(msg_id);
         let source = self.router.local_address();
-        for peer in self.peers() {
+        let peers = self.peers();
+        log::debug!("[ShareCtx] broadcast to {peers:?} nodes");
+        for peer in peers {
             peer.try_send(PeerMessage::Broadcast(source, service_id, msg_id, data.clone()))
                 .print_on_err("[ShareCtx] broadcast data over peer alias");
         }
@@ -156,7 +158,9 @@ impl SharedCtx {
         let msg_id = BroadcastMsgId::rand();
         self.check_broadcast_msg(msg_id);
         let source = self.router.local_address();
-        for peer in self.peers() {
+        let peers = self.peers();
+        log::debug!("[ShareCtx] broadcast to {peers:?} nodes");
+        for peer in peers {
             peer.send(PeerMessage::Broadcast(source, service_id, msg_id, data.clone()))
                 .await
                 .print_on_err("[ShareCtx] broadcast data over peer alias");
