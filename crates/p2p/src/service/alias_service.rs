@@ -3,6 +3,7 @@ use std::{
     time::Duration,
 };
 
+use anyhow::anyhow;
 use derive_more::derive::{Display, From};
 use lru::LruCache;
 use serde::{Deserialize, Serialize};
@@ -16,11 +17,12 @@ use tokio::{
 };
 
 use crate::{
+    stream::P2pQuicStream,
     utils::{now_ms, ErrorExt, ErrorExt2},
     PeerAddress,
 };
 
-use super::{P2pService, P2pServiceEvent};
+use super::{P2pService, P2pServiceEvent, P2pServiceRequester};
 
 const LRU_CACHE_SIZE: usize = 1_000_000;
 const HINT_TIMEOUT_MS: u64 = 500;
@@ -34,6 +36,12 @@ pub enum AliasFoundLocation {
     Local,
     Hint(PeerAddress),
     Scan(PeerAddress),
+}
+
+pub enum AliasStreamLocation {
+    Local,
+    Hint(P2pQuicStream),
+    Scan(P2pQuicStream),
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -88,6 +96,15 @@ impl AliasServiceRequester {
         let (tx, rx) = oneshot::channel();
         self.tx.send(AliasControl::Find(alias, tx)).expect("alias service main channal should work");
         rx.await.ok()?
+    }
+
+    pub async fn open_stream<A: Into<AliasId>>(&self, alias: A, over_service: P2pServiceRequester, meta: Vec<u8>) -> anyhow::Result<AliasStreamLocation> {
+        match self.find(alias).await {
+            Some(AliasFoundLocation::Local) => Ok(AliasStreamLocation::Local),
+            Some(AliasFoundLocation::Hint(dest)) => over_service.open_stream(dest, meta).await.map(AliasStreamLocation::Hint),
+            Some(AliasFoundLocation::Scan(dest)) => over_service.open_stream(dest, meta).await.map(AliasStreamLocation::Scan),
+            None => Err(anyhow!("alias not found")),
+        }
     }
 
     pub fn shutdown(&self) {

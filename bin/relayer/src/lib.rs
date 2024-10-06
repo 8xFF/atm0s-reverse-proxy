@@ -15,7 +15,6 @@ use protocol::{
     key::ClusterValidator,
     proxy::{AgentId, ProxyDestination},
 };
-use proxy::{http::HttpDestinationDetector, rtsp::RtspDestinationDetector, tls::TlsDestinationDetector, ProxyTcpListener};
 use quic::TunnelQuicStream;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use serde::de::DeserializeOwned;
@@ -30,6 +29,7 @@ mod proxy;
 mod quic;
 
 pub use p2p::PeerAddress;
+pub use proxy::{http::HttpDestinationDetector, rtsp::RtspDestinationDetector, tls::TlsDestinationDetector, ProxyDestinationDetector, ProxyTcpListener};
 
 pub struct QuicRelayerConfig {
     pub agent_listener: SocketAddr,
@@ -221,7 +221,7 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
                     log::warn!("[QuicRelayer] proxy service don't accept broadcast msg from {from}");
                     Ok(())
                 },
-                P2pServiceEvent::Stream(from, meta, stream) => {
+                P2pServiceEvent::Stream(_from, meta, stream) => {
                     if let Ok(proxy_dest) = bincode::deserialize::<ProxyDestination>(&meta) {
                         self.process_proxy(stream, proxy_dest, false);
                     }
