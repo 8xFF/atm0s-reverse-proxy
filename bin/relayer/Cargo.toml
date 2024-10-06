@@ -23,6 +23,7 @@ rand = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "std"] }
 futures = { workspace = true }
 parking_lot = { workspace = true }
+httparse = { workspace = true }
 
 [dev-dependencies]
 test-log = { workspace = true }

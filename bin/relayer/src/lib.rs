@@ -3,13 +3,14 @@ use std::{collections::HashMap, net::SocketAddr, time::Duration};
 use agent::{
     quic::AgentQuicListener,
     tcp::{AgentTcpListener, TunnelTcpStream},
-    AgentId, AgentListener, AgentListenerEvent, AgentSession, AgentSessionId,
+    AgentListener, AgentListenerEvent, AgentSession, AgentSessionId,
 };
 use anyhow::{anyhow, Ok};
 use p2p::{P2pNetwork, P2pNetworkConfig, P2pService, P2pServiceEvent, P2pServiceRequester};
 use protocol::{
     cluster::{write_object, AgentTunnelRequest},
     key::ClusterValidator,
+    AgentId,
 };
 use proxy::{http::HttpDestinationDetector, rtsp::RtspDestinationDetector, tls::TlsDestinationDetector, ProxyDestination, ProxyTcpListener};
 use quic::TunnelQuicStream;
@@ -99,13 +100,13 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
         let agent_id = dest.agent_id();
         if let Some(sessions) = self.agent_tcp_sessions.get(&agent_id) {
             let session = sessions.values().next().expect("should have session");
-            tokio::spawn(proxy_local(proxy, dest, session.clone()));
+            tokio::spawn(proxy_to_local_agent(proxy, dest, session.clone()));
         } else if let Some(sessions) = self.agent_quic_sessions.get(&agent_id) {
             let session = sessions.values().next().expect("should have session");
-            tokio::spawn(proxy_local(proxy, dest, session.clone()));
+            tokio::spawn(proxy_to_local_agent(proxy, dest, session.clone()));
         } else {
             let sdn_requester = self.sdn_proxy_service.requester();
-            tokio::spawn(proxy_cluster(proxy, dest, sdn_requester));
+            tokio::spawn(proxy_to_cluster(proxy, dest, sdn_requester));
         }
     }
 
@@ -215,7 +216,7 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
     }
 }
 
-async fn proxy_local<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static, S: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(
+async fn proxy_to_local_agent<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static, S: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(
     mut proxy: T,
     dest: ProxyDestination,
     agent: AgentSession<S>,
@@ -226,7 +227,7 @@ async fn proxy_local<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static, 
         &mut stream,
         AgentTunnelRequest {
             service: dest.service,
-            tls: dest.ttl,
+            tls: dest.tls,
             domain: dest.domain,
         },
     )
@@ -237,7 +238,7 @@ async fn proxy_local<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static, 
     Ok(())
 }
 
-async fn proxy_cluster<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(mut proxy: T, dest: ProxyDestination, sdn_requester: P2pServiceRequester) -> anyhow::Result<()> {
+async fn proxy_to_cluster<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(mut proxy: T, dest: ProxyDestination, sdn_requester: P2pServiceRequester) -> anyhow::Result<()> {
     let agent_id = dest.agent_id();
     let dest_node = sdn_requester.find_alias(*agent_id).await?.ok_or(anyhow!("ALIAS_NOT_FOUND"))?;
     let mut stream = sdn_requester.open_stream(dest_node, vec![]).await?;

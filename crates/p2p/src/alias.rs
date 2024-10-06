@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct AliasGuard {
-    internal: Arc<AliasGuardInternal>,
+    // internal: Arc<AliasGuardInternal>,
 }
 
 #[derive(Debug)]

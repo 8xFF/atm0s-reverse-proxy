@@ -1,4 +1,7 @@
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    net::TcpStream,
+};
 
 use super::{ProxyDestination, ProxyDestinationDetector};
 
@@ -6,7 +9,7 @@ use super::{ProxyDestination, ProxyDestinationDetector};
 pub struct TlsDestinationDetector {}
 
 impl ProxyDestinationDetector for TlsDestinationDetector {
-    async fn determine<S: AsyncRead + AsyncWrite>(&self, stream: &mut S) -> anyhow::Result<ProxyDestination> {
+    async fn determine(&self, stream: &mut TcpStream) -> anyhow::Result<ProxyDestination> {
         todo!()
     }
 }

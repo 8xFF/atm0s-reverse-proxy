@@ -88,10 +88,6 @@ impl ClusterValidator<RegisterRequest> for ClusterValidatorImpl {
         Ok(req)
     }
 
-    fn generate_agent_id(&self, req: &RegisterRequest) -> anyhow::Result<u64> {
-        Ok(u64::from_be_bytes(req.pub_key.to_bytes()[0..8].try_into().expect("should convert to u64")))
-    }
-
     fn generate_domain(&self, req: &RegisterRequest) -> anyhow::Result<String> {
         Ok(format!("{}.{}", convert_hex(&req.pub_key.to_bytes()[0..16]), self.root_domain))
     }

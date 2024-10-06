@@ -1,7 +1,6 @@
-use std::fmt::{Display, Write};
-
 use derive_more::derive::{Deref, Display, From};
 use p2p::AliasGuard;
+use protocol::AgentId;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::{mpsc::Sender, oneshot},
@@ -9,15 +8,6 @@ use tokio::{
 
 pub mod quic;
 pub mod tcp;
-
-#[derive(Debug, Hash, PartialEq, Eq, From, Deref, Clone, Copy)]
-pub struct AgentId(u64);
-
-impl Display for AgentId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("AgentId({:02x})", self.0))
-    }
-}
 
 #[derive(Debug, Hash, Display, PartialEq, Eq, From, Deref, Clone, Copy)]
 pub struct AgentSessionId(u64);

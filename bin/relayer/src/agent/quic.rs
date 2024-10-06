@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, net::SocketAddr, sync::Arc};
 
 use anyhow::anyhow;
-use protocol::{key::ClusterValidator, stream::TunnelStream};
+use protocol::{key::ClusterValidator, stream::TunnelStream, AgentId};
 use quinn::{Endpoint, Incoming, VarInt};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use serde::de::DeserializeOwned;
@@ -15,7 +15,7 @@ use crate::{
     quic::{make_server_endpoint, TunnelQuicStream},
 };
 
-use super::{AgentId, AgentListener, AgentListenerEvent, AgentSession, AgentSessionId};
+use super::{AgentListener, AgentListenerEvent, AgentSession, AgentSessionId};
 
 pub struct AgentQuicListener<VALIDATE, HANDSHAKE> {
     validate: Arc<VALIDATE>,
@@ -69,7 +69,7 @@ async fn run_connection<VALIDATE: ClusterValidator<REQ>, REQ>(validate: Arc<VALI
 
     let req = validate.validate_connect_req(&buf[0..buf_len])?;
     let domain = validate.generate_domain(&req)?;
-    let agent_id: AgentId = validate.generate_agent_id(&req)?.into();
+    let agent_id = AgentId::from_domain(&domain);
     let session_id = AgentSessionId::rand();
 
     log::info!("[AgentQuic] new connection validated with domain {domain} agent_id: {agent_id}, session uuid: {session_id}");

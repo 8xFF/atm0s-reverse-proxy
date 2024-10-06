@@ -1,12 +1,8 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::Ok;
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    net::{TcpListener, TcpStream},
-};
-
-use crate::agent::AgentId;
+use protocol::AgentId;
+use tokio::net::{TcpListener, TcpStream};
 
 pub mod http;
 pub mod rtsp;
@@ -15,17 +11,17 @@ pub mod tls;
 pub struct ProxyDestination {
     pub domain: String,
     pub service: Option<u16>,
-    pub ttl: bool,
+    pub tls: bool,
 }
 
 impl ProxyDestination {
     pub fn agent_id(&self) -> AgentId {
-        todo!()
+        AgentId::from_domain(&self.domain)
     }
 }
 
 pub trait ProxyDestinationDetector {
-    async fn determine<S: AsyncRead + AsyncWrite>(&self, stream: &mut S) -> anyhow::Result<ProxyDestination>;
+    async fn determine(&self, stream: &mut TcpStream) -> anyhow::Result<ProxyDestination>;
 }
 
 pub struct ProxyTcpListener<Detector> {
