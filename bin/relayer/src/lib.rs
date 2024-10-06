@@ -6,8 +6,11 @@ use agent::{
     AgentId, AgentListener, AgentListenerEvent, AgentSession, AgentSessionId,
 };
 use anyhow::{anyhow, Ok};
-use p2p::{P2pNetwork, P2pNetworkConfig, P2pService, P2pServiceBuilder, P2pServiceEvent, P2pServiceRequester};
-use protocol::key::ClusterValidator;
+use p2p::{P2pNetwork, P2pNetworkConfig, P2pService, P2pServiceEvent, P2pServiceRequester};
+use protocol::{
+    cluster::{write_object, AgentTunnelRequest},
+    key::ClusterValidator,
+};
 use proxy::{http::HttpDestinationDetector, rtsp::RtspDestinationDetector, tls::TlsDestinationDetector, ProxyDestination, ProxyTcpListener};
 use quic::TunnelQuicStream;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
@@ -62,17 +65,15 @@ pub struct QuicRelayer<VALIDATE, REQ> {
 
 impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'static> QuicRelayer<VALIDATE, REQ> {
     pub async fn new(cfg: QuicRelayerConfig, validate: VALIDATE) -> anyhow::Result<Self> {
-        let mut channels = P2pServiceBuilder::default();
-
-        let sdn_proxy_service = channels.add(0);
-
-        let network_cfg = P2pNetworkConfig {
+        let mut sdn = P2pNetwork::new(P2pNetworkConfig {
             addr: cfg.sdn_listener,
             advertise: cfg.sdn_advertise_address,
             priv_key: cfg.sdn_key,
             cert: cfg.sdn_cert,
-            services: channels,
-        };
+        })
+        .await?;
+
+        let sdn_proxy_service = sdn.create_service(0.into());
 
         Ok(Self {
             agent_quic: AgentQuicListener::new(cfg.agent_listener, cfg.agent_key, cfg.agent_cert, validate).await?,
@@ -82,9 +83,8 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
             rtsp_proxy: ProxyTcpListener::new(cfg.proxy_rtsp_listener, Default::default()).await?,
             rtsps_proxy: ProxyTcpListener::new(cfg.proxy_rtsps_listener, Default::default()).await?,
 
-            sdn: P2pNetwork::new(network_cfg).await?,
             sdn_seeds: cfg.sdn_seeds,
-
+            sdn,
             sdn_proxy_service,
 
             agent_quic_sessions: HashMap::new(),
@@ -220,7 +220,17 @@ async fn proxy_local<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static, 
     agent: AgentSession<S>,
 ) -> anyhow::Result<()> {
     let mut stream = agent.create_stream().await?;
-    // TODO write req
+
+    write_object::<_, _, 500>(
+        &mut stream,
+        AgentTunnelRequest {
+            service: dest.service,
+            tls: dest.ttl,
+            domain: dest.domain,
+        },
+    )
+    .await?;
+
     let res = copy_bidirectional(&mut proxy, &mut stream).await?;
     log::info!("[ProxyLocal] done with res {res:?}");
     Ok(())

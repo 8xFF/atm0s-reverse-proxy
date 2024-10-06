@@ -1,7 +1,6 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::Ok;
-use protocol::stream::TunnelStream;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::{TcpListener, TcpStream},
@@ -15,7 +14,8 @@ pub mod tls;
 
 pub struct ProxyDestination {
     pub domain: String,
-    pub service: u16,
+    pub service: Option<u16>,
+    pub ttl: bool,
 }
 
 impl ProxyDestination {

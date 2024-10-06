@@ -4,7 +4,7 @@
 use tokio::sync::{mpsc::Sender, oneshot};
 
 use crate::{
-    msg::{PeerMessage, ServiceId},
+    msg::{P2pServiceId, PeerMessage},
     stream::P2pQuicStream,
     PeerAddress,
 };
@@ -22,7 +22,7 @@ impl PeerAlias {
         Self { peer, control_tx }
     }
 
-    pub(super) async fn send(&self, control: PeerConnectionControl) -> anyhow::Result<()> {
+    pub(super) async fn control(&self, control: PeerConnectionControl) -> anyhow::Result<()> {
         self.control_tx.send(control).await?;
         Ok(())
     }
@@ -35,7 +35,11 @@ impl PeerAlias {
         Ok(self.control_tx.try_send(PeerConnectionControl::Send(msg))?)
     }
 
-    pub(super) async fn open_stream(&self, service: ServiceId, source: PeerAddress, dest: PeerAddress, meta: Vec<u8>) -> anyhow::Result<P2pQuicStream> {
+    pub(crate) async fn send(&self, msg: PeerMessage) -> anyhow::Result<()> {
+        Ok(self.control_tx.send(PeerConnectionControl::Send(msg)).await?)
+    }
+
+    pub(crate) async fn open_stream(&self, service: P2pServiceId, source: PeerAddress, dest: PeerAddress, meta: Vec<u8>) -> anyhow::Result<P2pQuicStream> {
         let (tx, rx) = oneshot::channel();
         self.control_tx.send(PeerConnectionControl::OpenStream(service, source, dest, meta, tx)).await?;
         Ok(rx.await??)

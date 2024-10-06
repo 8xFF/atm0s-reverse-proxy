@@ -56,6 +56,10 @@ impl RouterTable {
         }
     }
 
+    pub fn local_address(&self) -> PeerAddress {
+        self.address
+    }
+
     pub fn create_sync(&self, dest: &PeerAddress) -> RouterTableSync {
         RouterTableSync(
             self.peers
@@ -123,11 +127,11 @@ impl RouterTable {
         }
     }
 
-    pub fn action(&self, next: &PeerAddress) -> Option<RouteAction> {
-        if self.address.eq(next) {
+    pub fn action(&self, dest: &PeerAddress) -> Option<RouteAction> {
+        if self.address.eq(dest) {
             Some(RouteAction::Local)
         } else {
-            self.peers.get(next)?.best().map(RouteAction::Next)
+            self.peers.get(dest)?.best().map(RouteAction::Next)
         }
     }
 
@@ -209,6 +213,10 @@ impl SharedRouterTable {
         }
     }
 
+    pub fn local_address(&self) -> PeerAddress {
+        self.table.read().local_address()
+    }
+
     pub fn create_sync(&self, dest: &PeerAddress) -> RouterTableSync {
         self.table.read().create_sync(&dest)
     }
@@ -225,12 +233,12 @@ impl SharedRouterTable {
         self.table.write().del_direct(from);
     }
 
-    pub fn action(&self, next: &PeerAddress) -> Option<RouteAction> {
-        self.table.read().action(next)
+    pub fn action(&self, dest: &PeerAddress) -> Option<RouteAction> {
+        self.table.read().action(dest)
     }
 
-    pub fn next_remote(&self, next: &PeerAddress) -> Option<(PeerAddress, PathMetric)> {
-        self.table.read().next_remote(next)
+    pub fn next_remote(&self, dest: &PeerAddress) -> Option<(PeerAddress, PathMetric)> {
+        self.table.read().next_remote(dest)
     }
 }
 

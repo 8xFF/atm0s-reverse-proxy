@@ -5,7 +5,7 @@ use tokio::sync::{
     oneshot,
 };
 
-use crate::{ctx::SharedCtx, msg::ServiceId, stream::P2pQuicStream, PeerAddress};
+use crate::{ctx::SharedCtx, msg::P2pServiceId, stream::P2pQuicStream, PeerAddress};
 
 use super::{msg::PeerMessage, InternalEvent};
 
@@ -16,7 +16,7 @@ pub use peer_alias::PeerAlias;
 
 enum PeerConnectionControl {
     Send(PeerMessage),
-    OpenStream(ServiceId, PeerAddress, PeerAddress, Vec<u8>, oneshot::Sender<anyhow::Result<P2pQuicStream>>),
+    OpenStream(P2pServiceId, PeerAddress, PeerAddress, Vec<u8>, oneshot::Sender<anyhow::Result<P2pQuicStream>>),
 }
 
 pub struct PeerConnection {

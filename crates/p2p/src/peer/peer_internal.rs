@@ -17,7 +17,7 @@ use tokio_util::codec::Framed;
 
 use crate::{
     ctx::SharedCtx,
-    msg::{PeerMessage, ServiceId, StreamConnectReq, StreamConnectRes},
+    msg::{P2pServiceId, PeerMessage, StreamConnectReq, StreamConnectRes},
     router::RouteAction,
     stream::{wait_object, write_object, BincodeCodec, P2pQuicStream},
     utils::ErrorExt,
@@ -116,7 +116,7 @@ impl PeerConnectionInternal {
                             .print_on_err("[PeerConnectionInternal] broadcast data over peer alias");
                     }
 
-                    if let Some(service) = self.ctx.service(&service_id) {
+                    if let Some(service) = self.ctx.get_service(&service_id) {
                         service.try_send(P2pServiceEvent::Broadcast(source, data)).print_on_err("[PeerConnectionInternal] send service msg");
                     }
                 } else {
@@ -125,7 +125,7 @@ impl PeerConnectionInternal {
             }
             PeerMessage::Unicast(source, dest, service_id, data) => match self.ctx.router().action(&dest) {
                 Some(RouteAction::Local) => {
-                    if let Some(service) = self.ctx.service(&service_id) {
+                    if let Some(service) = self.ctx.get_service(&service_id) {
                         service.try_send(P2pServiceEvent::Unicast(source, data)).print_on_err("[PeerConnectionInternal] send service msg");
                     } else {
                         log::warn!("[PeerConnectionInternal {}] service {service_id} not found", self.remote);
@@ -148,7 +148,7 @@ impl PeerConnectionInternal {
     }
 }
 
-async fn open_bi(connection: Connection, source: PeerAddress, dest: PeerAddress, service: ServiceId, meta: Vec<u8>) -> anyhow::Result<P2pQuicStream> {
+async fn open_bi(connection: Connection, source: PeerAddress, dest: PeerAddress, service: P2pServiceId, meta: Vec<u8>) -> anyhow::Result<P2pQuicStream> {
     let (send, recv) = connection.open_bi().await?;
     let mut stream = P2pQuicStream::new(recv, send);
     write_object::<_, _, 500>(&mut stream, &StreamConnectReq { source, dest, service, meta }).await?;
@@ -161,7 +161,7 @@ async fn accept_bi(remote: PeerAddress, mut stream: P2pQuicStream, ctx: SharedCt
     let StreamConnectReq { dest, source, service, meta } = req;
     match ctx.router().action(&dest) {
         Some(RouteAction::Local) => {
-            if let Some(service_tx) = ctx.service(&service) {
+            if let Some(service_tx) = ctx.get_service(&service) {
                 log::info!("[PeerConnectionInternal {remote}] stream service {service} source {source} to dest {dest} => process local");
                 write_object::<_, _, 500>(&mut stream, &Ok::<_, String>(())).await?;
                 service_tx

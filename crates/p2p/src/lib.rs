@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use ctx::SharedCtx;
 use derive_more::derive::{Deref, Display, From};
 use discovery::{PeerDiscovery, PeerDiscoverySync};
-use msg::PeerMessage;
+use msg::{P2pServiceId, PeerMessage};
 use neighbours::NetworkNeighbours;
 use peer::PeerConnection;
 use quinn::{Endpoint, Incoming, VarInt};
@@ -39,7 +39,7 @@ mod utils;
 
 pub use alias::AliasGuard;
 pub use requester::P2pNetworkRequester;
-pub use service::{P2pService, P2pServiceBuilder, P2pServiceEvent, P2pServiceRequester};
+pub use service::{P2pService, P2pServiceEvent, P2pServiceRequester};
 
 #[derive(Debug, Display, Clone, Copy, From, Deref, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PeerAddress(SocketAddr);
@@ -68,7 +68,6 @@ pub struct P2pNetworkConfig {
     pub advertise: Option<SocketAddr>,
     pub priv_key: PrivatePkcs8KeyDer<'static>,
     pub cert: CertificateDer<'static>,
-    pub services: P2pServiceBuilder,
 }
 
 pub struct P2pNetwork {
@@ -105,10 +104,16 @@ impl P2pNetwork {
             control_tx,
             control_rx,
             ticker: tokio::time::interval(Duration::from_secs(2)),
-            ctx: SharedCtx::new(router.clone(), cfg.services.build()),
+            ctx: SharedCtx::new(router.clone()),
             router,
             discovery,
         })
+    }
+
+    pub fn create_service(&mut self, service_id: P2pServiceId) -> P2pService {
+        let (service, tx) = P2pService::build(service_id, self.ctx.clone());
+        self.ctx.set_service(service_id, tx);
+        service
     }
 
     pub fn requester(&mut self) -> P2pNetworkRequester {
