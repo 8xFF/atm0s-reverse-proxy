@@ -66,7 +66,7 @@ async fn send_relay() {
     node2_requester.connect(addr1).await.expect("should connect success");
     node3_requester.connect(addr2).await.expect("should connect success");
 
-    tokio::time::sleep(Duration::from_secs(3)).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
 
     let data = "from_node1".as_bytes().to_vec();
     service1.send_unicast(addr3, data.clone()).await.expect("should send ok");

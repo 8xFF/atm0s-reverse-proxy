@@ -70,6 +70,7 @@ pub struct P2pNetworkConfig {
     pub advertise: Option<SocketAddr>,
     pub priv_key: PrivatePkcs8KeyDer<'static>,
     pub cert: CertificateDer<'static>,
+    pub tick_ms: u64,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -112,7 +113,7 @@ impl P2pNetwork {
             internal_rx,
             control_tx,
             control_rx,
-            ticker: tokio::time::interval(Duration::from_secs(2)),
+            ticker: tokio::time::interval(Duration::from_millis(cfg.tick_ms)),
             ctx: SharedCtx::new(router.clone()),
             router,
             discovery,

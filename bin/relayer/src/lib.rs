@@ -70,6 +70,7 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
             advertise: cfg.sdn_advertise_address,
             priv_key: cfg.sdn_key,
             cert: cfg.sdn_cert,
+            tick_ms: 1000,
         })
         .await?;
 

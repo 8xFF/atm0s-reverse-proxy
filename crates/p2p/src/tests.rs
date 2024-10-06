@@ -26,6 +26,7 @@ async fn create_random_node(advertise: bool) -> (P2pNetwork, PeerAddress) {
             advertise: advertise.then(|| addr.into()),
             priv_key: key,
             cert: cert,
+            tick_ms: 100,
         })
         .await
         .unwrap(),

@@ -40,7 +40,7 @@ async fn discovery_remain_node() {
     node2_requester.connect(addr1).await.expect("should connect success");
     node3_requester.connect(addr2).await.expect("should connect success");
 
-    tokio::time::sleep(Duration::from_secs(8)).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
 
     // after some cycle node3 should have node1 as neighbour
     assert_eq!(node3_neighbours.lock().len(), 2);
