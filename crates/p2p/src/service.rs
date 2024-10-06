@@ -4,6 +4,7 @@ use crate::{alias::AliasGuard, ctx::SharedCtx, msg::P2pServiceId, stream::P2pQui
 
 const SERVICE_CHANNEL_SIZE: usize = 10;
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum P2pServiceEvent {
     Unicast(PeerAddress, Vec<u8>),
     Broadcast(PeerAddress, Vec<u8>),

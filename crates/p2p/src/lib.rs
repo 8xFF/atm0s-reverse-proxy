@@ -35,6 +35,8 @@ mod requester;
 mod router;
 mod service;
 mod stream;
+#[cfg(test)]
+mod tests;
 mod utils;
 
 pub use alias::AliasGuard;
@@ -68,6 +70,13 @@ pub struct P2pNetworkConfig {
     pub advertise: Option<SocketAddr>,
     pub priv_key: PrivatePkcs8KeyDer<'static>,
     pub cert: CertificateDer<'static>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum P2pNetworkEvent {
+    PeerConnected(PeerAddress),
+    PeerDisconnected(PeerAddress),
+    Continue,
 }
 
 pub struct P2pNetwork {
@@ -120,7 +129,7 @@ impl P2pNetwork {
         P2pNetworkRequester { control_tx: self.control_tx.clone() }
     }
 
-    pub async fn recv(&mut self) -> anyhow::Result<()> {
+    pub async fn recv(&mut self) -> anyhow::Result<P2pNetworkEvent> {
         select! {
             _ = self.ticker.tick() => {
                 self.process_tick(now_ms())
@@ -142,7 +151,7 @@ impl P2pNetwork {
         self.endpoint.close(VarInt::from_u32(0), "Shutdown".as_bytes());
     }
 
-    fn process_tick(&mut self, now_ms: u64) -> anyhow::Result<()> {
+    fn process_tick(&mut self, now_ms: u64) -> anyhow::Result<P2pNetworkEvent> {
         self.discovery.clear_timeout(now_ms);
         for peer in self.neighbours.connected_peers() {
             let route: router::RouterTableSync = self.router.create_sync(&peer.remote());
@@ -154,31 +163,32 @@ impl P2pNetwork {
             }
         }
         for addr in self.discovery.remotes() {
+            log::info!("sending connect to {addr}");
             self.control_tx.send(ControlCmd::Connect(*addr, None))?;
         }
-        Ok(())
+        Ok(P2pNetworkEvent::Continue)
     }
 
-    fn process_incoming(&mut self, incoming: Incoming) -> anyhow::Result<()> {
+    fn process_incoming(&mut self, incoming: Incoming) -> anyhow::Result<P2pNetworkEvent> {
         let remote: PeerAddress = incoming.remote_address().into();
         if self.neighbours.has_peer(&remote) {
             log::warn!("[P2pNetwork] incoming connect from {remote} but already existed => reject");
             incoming.refuse();
-            Ok(())
+            Ok(P2pNetworkEvent::Continue)
         } else {
             log::info!("[P2pNetwork] incoming connect from {remote} => accept");
             self.neighbours.insert(remote, PeerConnection::new_incoming(incoming, self.internal_tx.clone(), self.ctx.clone()));
-            Ok(())
+            Ok(P2pNetworkEvent::Continue)
         }
     }
 
-    fn process_internal(&mut self, now_ms: u64, event: InternalEvent) -> anyhow::Result<()> {
+    fn process_internal(&mut self, now_ms: u64, event: InternalEvent) -> anyhow::Result<P2pNetworkEvent> {
         match event {
             InternalEvent::PeerConnected(remote, ttl_ms) => {
                 log::info!("[P2pNetwork] connected to {remote}");
                 self.router.set_direct(remote, ttl_ms);
                 self.neighbours.mark_connected(&remote);
-                Ok(())
+                Ok(P2pNetworkEvent::PeerConnected(remote))
             }
             InternalEvent::PeerData(remote, data) => {
                 log::debug!("[P2pNetwork] on data {data:?} from {remote}");
@@ -188,23 +198,22 @@ impl P2pNetwork {
                         self.discovery.apply_sync(now_ms, advertise);
                     }
                 }
-                Ok(())
+                Ok(P2pNetworkEvent::Continue)
             }
             InternalEvent::PeerConnectError(remote, err) => {
                 log::error!("[P2pNetwork] connect to {remote} error {err}");
-                self.neighbours.remove(&remote);
-                Ok(())
+                Ok(P2pNetworkEvent::Continue)
             }
             InternalEvent::PeerDisconnected(remote) => {
                 log::info!("[P2pNetwork] disconnected from {remote}");
                 self.router.del_direct(&remote);
                 self.neighbours.remove(&remote);
-                Ok(())
+                Ok(P2pNetworkEvent::PeerDisconnected(remote))
             }
         }
     }
 
-    fn process_control(&mut self, cmd: ControlCmd) -> anyhow::Result<()> {
+    fn process_control(&mut self, cmd: ControlCmd) -> anyhow::Result<P2pNetworkEvent> {
         match cmd {
             ControlCmd::Connect(addr, tx) => {
                 let res = if self.neighbours.has_peer(&addr) {
@@ -224,7 +233,7 @@ impl P2pNetwork {
                     tx.send(res).print_on_err2("[P2pNetwork] send connect answer");
                 }
 
-                Ok(())
+                Ok(P2pNetworkEvent::Continue)
             }
             ControlCmd::RegisterAlias(_, sender) => todo!(),
             ControlCmd::FindAlias(_, sender) => todo!(),

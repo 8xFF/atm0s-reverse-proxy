@@ -15,10 +15,19 @@ use tokio_util::{
 use quinn::{RecvStream, SendStream};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
+#[derive(Debug)]
 pub struct P2pQuicStream {
     read: RecvStream,
     write: SendStream,
 }
+
+impl PartialEq for P2pQuicStream {
+    fn eq(&self, other: &Self) -> bool {
+        self.read.id() == other.read.id() && self.write.id() == other.write.id()
+    }
+}
+
+impl Eq for P2pQuicStream {}
 
 impl P2pQuicStream {
     pub fn new(read: RecvStream, write: SendStream) -> Self {

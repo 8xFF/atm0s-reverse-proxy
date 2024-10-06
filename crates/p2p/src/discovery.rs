@@ -43,6 +43,7 @@ impl PeerDiscovery {
     }
 
     pub fn apply_sync(&mut self, now_ms: u64, sync: PeerDiscoverySync) {
+        log::debug!("[PeerDiscovery] apply sync with addrs: {:?}", sync.0);
         for (peer, last_updated) in sync.0.into_iter() {
             if last_updated + TIMEOUT_AFTER > now_ms {
                 if self.remotes.insert(peer, last_updated).is_none() {
