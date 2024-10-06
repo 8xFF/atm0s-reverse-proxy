@@ -4,6 +4,7 @@ use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 
 use crate::{P2pNetwork, P2pNetworkConfig, PeerAddress};
 
+mod alias;
 mod cross_nodes;
 mod discovery;
 

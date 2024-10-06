@@ -1,24 +1,12 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::Ok;
-use protocol::AgentId;
+use protocol::proxy::ProxyDestination;
 use tokio::net::{TcpListener, TcpStream};
 
 pub mod http;
 pub mod rtsp;
 pub mod tls;
-
-pub struct ProxyDestination {
-    pub domain: String,
-    pub service: Option<u16>,
-    pub tls: bool,
-}
-
-impl ProxyDestination {
-    pub fn agent_id(&self) -> AgentId {
-        AgentId::from_domain(&self.domain)
-    }
-}
 
 pub trait ProxyDestinationDetector {
     async fn determine(&self, stream: &mut TcpStream) -> anyhow::Result<ProxyDestination>;

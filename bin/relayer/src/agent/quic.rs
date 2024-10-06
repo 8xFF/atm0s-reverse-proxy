@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, net::SocketAddr, sync::Arc};
 
 use anyhow::anyhow;
-use protocol::{key::ClusterValidator, stream::TunnelStream, AgentId};
+use protocol::{key::ClusterValidator, proxy::AgentId, stream::TunnelStream};
 use quinn::{Endpoint, Incoming, VarInt};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use serde::de::DeserializeOwned;

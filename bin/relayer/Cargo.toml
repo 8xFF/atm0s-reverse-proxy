@@ -24,6 +24,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "std"] }
 futures = { workspace = true }
 parking_lot = { workspace = true }
 httparse = { workspace = true }
+bincode = { workspace = true }
 
 [dev-dependencies]
 test-log = { workspace = true }

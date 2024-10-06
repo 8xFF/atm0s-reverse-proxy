@@ -22,11 +22,6 @@ impl PeerAlias {
         Self { peer, control_tx }
     }
 
-    pub(super) async fn control(&self, control: PeerConnectionControl) -> anyhow::Result<()> {
-        self.control_tx.send(control).await?;
-        Ok(())
-    }
-
     pub(super) fn address(&self) -> PeerAddress {
         self.peer
     }

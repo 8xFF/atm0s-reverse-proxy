@@ -1,7 +1,8 @@
-use anyhow::anyhow;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
-use crate::{alias::AliasGuard, ctx::SharedCtx, msg::P2pServiceId, stream::P2pQuicStream, PeerAddress};
+use crate::{ctx::SharedCtx, msg::P2pServiceId, stream::P2pQuicStream, PeerAddress};
+
+pub mod alias_service;
 
 const SERVICE_CHANNEL_SIZE: usize = 10;
 
@@ -36,16 +37,6 @@ impl P2pService {
         }
     }
 
-    pub fn register_alias(&self, alias: u64) -> AliasGuard {
-        // TODO
-        AliasGuard {}
-    }
-
-    pub async fn find_alias(&self, alias: u64) -> anyhow::Result<Option<PeerAddress>> {
-        // TODO
-        Err(anyhow!("not implemented"))
-    }
-
     pub async fn send_unicast(&self, dest: PeerAddress, data: Vec<u8>) -> anyhow::Result<()> {
         self.ctx.send_unicast(self.service, dest, data).await
     }
@@ -72,14 +63,6 @@ impl P2pService {
 }
 
 impl P2pServiceRequester {
-    pub fn register_alias(&self, alias: u64) -> AliasGuard {
-        todo!()
-    }
-
-    pub async fn find_alias(&self, alias: u64) -> anyhow::Result<Option<PeerAddress>> {
-        todo!()
-    }
-
     pub async fn send_unicast(&self, dest: PeerAddress, data: Vec<u8>) -> anyhow::Result<()> {
         self.ctx.send_unicast(self.service, dest, data).await
     }

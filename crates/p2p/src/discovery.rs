@@ -21,11 +21,6 @@ impl PeerDiscovery {
         self.local = Some(local);
     }
 
-    pub fn disable_local(&mut self) {
-        log::info!("[PeerDiscovery] disable local");
-        self.local = None;
-    }
-
     pub fn clear_timeout(&mut self, now_ms: u64) {
         self.remotes.retain(|peer, last_updated| {
             if *last_updated + TIMEOUT_AFTER > now_ms {

@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 use derive_more::derive::{Deref, Display, From};
-use p2p::AliasGuard;
-use protocol::AgentId;
+use p2p::alias_service::AliasGuard;
+use protocol::proxy::AgentId;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::{mpsc::Sender, oneshot},
@@ -27,7 +29,7 @@ pub struct AgentSession<S> {
     agent_id: AgentId,
     session_id: AgentSessionId,
     control_tx: Sender<AgentSessionControl<S>>,
-    alias_guard: Option<AliasGuard>,
+    alias_guard: Option<Arc<AliasGuard>>,
 }
 
 impl<S> AgentSession<S> {
@@ -42,7 +44,7 @@ impl<S> AgentSession<S> {
 
     /// We keep this alias guard here fore automatic unregister when session destroyed
     pub(super) fn set_alias_guard(&mut self, alias: AliasGuard) {
-        self.alias_guard = Some(alias);
+        self.alias_guard = Some(alias.into());
     }
 }
 

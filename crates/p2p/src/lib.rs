@@ -11,7 +11,6 @@ use quinn::{Endpoint, Incoming, VarInt};
 use router::{RouterTableSync, SharedRouterTable};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use serde::{Deserialize, Serialize};
-use stream::P2pQuicStream;
 use tokio::{
     select,
     sync::{
@@ -20,11 +19,9 @@ use tokio::{
     },
     time::Interval,
 };
-use utils::{now_ms, ErrorExt2};
 
 use crate::quic::make_server_endpoint;
 
-mod alias;
 mod ctx;
 mod discovery;
 mod msg;
@@ -39,9 +36,9 @@ mod stream;
 mod tests;
 mod utils;
 
-pub use alias::AliasGuard;
 pub use requester::P2pNetworkRequester;
-pub use service::{P2pService, P2pServiceEvent, P2pServiceRequester};
+pub use service::*;
+pub use utils::*;
 
 #[derive(Debug, Display, Clone, Copy, From, Deref, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PeerAddress(SocketAddr);
@@ -60,9 +57,6 @@ enum InternalEvent {
 
 enum ControlCmd {
     Connect(PeerAddress, Option<oneshot::Sender<anyhow::Result<()>>>),
-    RegisterAlias(u64, oneshot::Sender<AliasGuard>),
-    FindAlias(u64, oneshot::Sender<anyhow::Result<Option<PeerAddress>>>),
-    CreateStream(PeerAddress, oneshot::Sender<anyhow::Result<P2pQuicStream>>),
 }
 
 pub struct P2pNetworkConfig {
@@ -235,9 +229,6 @@ impl P2pNetwork {
 
                 Ok(P2pNetworkEvent::Continue)
             }
-            ControlCmd::RegisterAlias(_, sender) => todo!(),
-            ControlCmd::FindAlias(_, sender) => todo!(),
-            ControlCmd::CreateStream(_, sender) => todo!(),
         }
     }
 }
