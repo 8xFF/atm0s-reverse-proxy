@@ -6,7 +6,7 @@ description = "Server for atm0s-reverse proxy cluster"
 license = "MIT"
 
 [dependencies]
-p2p = { workspace = true }
+p2p = { package = "atm0s-small-p2p", git = "https://github.com/8xFF/atm0s-small-p2p.git", branch = "main" }
 protocol = { workspace = true }
 protocol-ed25519 = { workspace = true, optional = true }
 metrics-dashboard = { workspace = true, features = ["system"], optional = true }
