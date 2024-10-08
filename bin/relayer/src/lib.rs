@@ -6,7 +6,10 @@ use agent::{
     AgentListener, AgentListenerEvent, AgentSession,
 };
 use anyhow::anyhow;
-use p2p::{ErrorExt, P2pNetwork, P2pNetworkConfig};
+use p2p::{
+    alias_service::{AliasService, AliasServiceRequester},
+    ErrorExt, P2pNetwork, P2pNetworkConfig, P2pService, P2pServiceEvent, P2pServiceRequester, PeerAddress,
+};
 use protocol::{
     cluster::{write_object, AgentTunnelRequest},
     key::ClusterValidator,
@@ -28,10 +31,7 @@ mod quic;
 
 pub use agent::AgentSessionId;
 pub use metrics::*;
-pub use p2p::{
-    alias_service::{AliasFoundLocation, AliasGuard, AliasId, AliasService, AliasServiceRequester, AliasStreamLocation},
-    P2pQuicStream, P2pService, P2pServiceEvent, P2pServiceRequester, PeerAddress,
-};
+pub use p2p;
 pub use proxy::{http::HttpDestinationDetector, rtsp::RtspDestinationDetector, tls::TlsDestinationDetector, ProxyDestinationDetector, ProxyTcpListener};
 
 const ALIAS_SERVICE: u16 = 0;
@@ -117,7 +117,7 @@ where
         })
         .await?;
 
-        let mut sdn_alias: AliasService = AliasService::new(sdn.create_service(ALIAS_SERVICE.into()));
+        let mut sdn_alias = AliasService::new(sdn.create_service(ALIAS_SERVICE.into()));
         let sdn_alias_requester = sdn_alias.requester();
         tokio::spawn(async move { while let Ok(_) = sdn_alias.recv().await {} });
         let sdn_proxy_service = sdn.create_service(PROXY_TO_AGENT_SERVICE.into());
@@ -180,6 +180,10 @@ where
                 }
             }
         });
+    }
+
+    pub fn p2p(&mut self) -> &mut P2pNetwork {
+        &mut self.sdn
     }
 
     pub async fn recv(&mut self) -> anyhow::Result<QuicRelayerEvent> {
