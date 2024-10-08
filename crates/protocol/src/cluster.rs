@@ -76,8 +76,8 @@ pub async fn wait_object<R: AsyncRead + Unpin, O: DeserializeOwned, const MAX_SI
     Ok(bincode::deserialize(&data_buf[0..handshake_len])?)
 }
 
-pub async fn write_object<W: AsyncWrite + Send + Unpin, O: Serialize, const MAX_SIZE: usize>(writer: &mut W, object: O) -> anyhow::Result<()> {
-    let data_buf: Vec<u8> = bincode::serialize(&object).expect("Should convert to binary");
+pub async fn write_object<W: AsyncWrite + Send + Unpin, O: Serialize, const MAX_SIZE: usize>(writer: &mut W, object: &O) -> anyhow::Result<()> {
+    let data_buf: Vec<u8> = bincode::serialize(object).expect("Should convert to binary");
     if data_buf.len() > MAX_SIZE {
         return Err(anyhow!("buffer to big {} vs {MAX_SIZE}", data_buf.len()));
     }

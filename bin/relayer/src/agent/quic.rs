@@ -79,7 +79,7 @@ async fn run_connection<VALIDATE: ClusterValidator<REQ>, REQ>(validate: Arc<VALI
     let (control_tx, mut control_rx) = channel(10);
 
     internal_tx
-        .send(AgentListenerEvent::Connected(agent_id, AgentSession::new(agent_id, session_id, control_tx)))
+        .send(AgentListenerEvent::Connected(agent_id, AgentSession::new(agent_id, session_id, domain, control_tx)))
         .await
         .expect("should send to main loop");
 

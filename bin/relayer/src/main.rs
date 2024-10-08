@@ -1,13 +1,13 @@
 use std::net::SocketAddr;
 
-use atm0s_reverse_proxy_relayer::{QuicRelayer, QuicRelayerConfig};
+use atm0s_reverse_proxy_relayer::{QuicRelayer, QuicRelayerConfig, TunnelServiceHandle};
 use clap::Parser;
 use protocol::{DEFAULT_CLUSTER_CERT, DEFAULT_CLUSTER_KEY, DEFAULT_TUNNEL_CERT, DEFAULT_TUNNEL_KEY};
 use protocol_ed25519::ClusterValidatorImpl;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-/// A Certs util for quic, which generate der cert and key based on domain
+/// A Relayer node which can connect to each-other to build a high-available relay system
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -82,8 +82,19 @@ async fn main() {
         sdn_cert: default_cluster_cert,
         sdn_seeds: args.sdn_seeds.into_iter().map(|a| a.into()).collect::<Vec<_>>(),
         sdn_advertise_address: args.sdn_advertise_address,
+        tunnel_service_handle: DummyTunnelHandle,
     };
     let validator = ClusterValidatorImpl::new(args.root_domain);
     let mut relayer = QuicRelayer::new(cfg, validator).await.expect("should create relayer");
     while let Ok(_) = relayer.recv().await {}
+}
+
+struct DummyTunnelHandle;
+
+impl TunnelServiceHandle for DummyTunnelHandle {
+    fn start(&mut self, _ctx: &atm0s_reverse_proxy_relayer::TunnelServiceCtx) {}
+
+    fn on_agent_conn<S: tokio::io::AsyncRead + tokio::io::AsyncWrite>(&mut self, _ctx: &atm0s_reverse_proxy_relayer::TunnelServiceCtx, _agent_id: protocol::proxy::AgentId, _stream: S) {}
+
+    fn on_cluster_event(&mut self, _ctx: &atm0s_reverse_proxy_relayer::TunnelServiceCtx, _event: p2p::P2pServiceEvent) {}
 }

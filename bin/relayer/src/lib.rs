@@ -3,13 +3,10 @@ use std::{collections::HashMap, net::SocketAddr, time::Duration};
 use agent::{
     quic::AgentQuicListener,
     tcp::{AgentTcpListener, TunnelTcpStream},
-    AgentListener, AgentListenerEvent, AgentSession, AgentSessionId,
+    AgentListener, AgentListenerEvent, AgentSession,
 };
 use anyhow::anyhow;
-use p2p::{
-    alias_service::{AliasService, AliasServiceRequester},
-    ErrorExt, P2pNetwork, P2pNetworkConfig, P2pService, P2pServiceEvent, P2pServiceRequester,
-};
+use p2p::{ErrorExt, P2pNetwork, P2pNetworkConfig};
 use protocol::{
     cluster::{write_object, AgentTunnelRequest},
     key::ClusterValidator,
@@ -25,13 +22,36 @@ use tokio::{
 };
 
 mod agent;
+mod metrics;
 mod proxy;
 mod quic;
 
-pub use p2p::PeerAddress;
+pub use agent::AgentSessionId;
+pub use metrics::*;
+pub use p2p::{
+    alias_service::{AliasFoundLocation, AliasGuard, AliasId, AliasService, AliasServiceRequester, AliasStreamLocation},
+    P2pQuicStream, P2pService, P2pServiceEvent, P2pServiceRequester, PeerAddress,
+};
 pub use proxy::{http::HttpDestinationDetector, rtsp::RtspDestinationDetector, tls::TlsDestinationDetector, ProxyDestinationDetector, ProxyTcpListener};
 
-pub struct QuicRelayerConfig {
+const ALIAS_SERVICE: u16 = 0;
+const PROXY_TO_AGENT_SERVICE: u16 = 1;
+const TUNNEL_TO_CLUSTER_SERIVCE: u16 = 2;
+
+#[derive(Clone)]
+pub struct TunnelServiceCtx {
+    pub service: P2pServiceRequester,
+    pub alias: AliasServiceRequester,
+}
+
+/// This service take care how we process a incoming request from agent
+pub trait TunnelServiceHandle {
+    fn start(&mut self, _ctx: &TunnelServiceCtx);
+    fn on_agent_conn<S: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(&mut self, _ctx: &TunnelServiceCtx, _agent_id: AgentId, _stream: S);
+    fn on_cluster_event(&mut self, _ctx: &TunnelServiceCtx, _event: P2pServiceEvent);
+}
+
+pub struct QuicRelayerConfig<TSH> {
     pub agent_listener: SocketAddr,
     pub sdn_listener: SocketAddr,
     pub proxy_http_listener: SocketAddr,
@@ -46,9 +66,17 @@ pub struct QuicRelayerConfig {
     pub sdn_key: PrivatePkcs8KeyDer<'static>,
     pub sdn_cert: CertificateDer<'static>,
     pub sdn_advertise_address: Option<SocketAddr>,
+
+    pub tunnel_service_handle: TSH,
 }
 
-pub struct QuicRelayer<VALIDATE, REQ> {
+pub enum QuicRelayerEvent {
+    AgentConnected(AgentId, AgentSessionId, String),
+    AgentDisconnected(AgentId, AgentSessionId),
+    Continue,
+}
+
+pub struct QuicRelayer<VALIDATE, REQ, TSH> {
     agent_quic: AgentQuicListener<VALIDATE, REQ>,
     agent_tcp: AgentTcpListener,
     http_proxy: ProxyTcpListener<HttpDestinationDetector>,
@@ -60,7 +88,12 @@ pub struct QuicRelayer<VALIDATE, REQ> {
     sdn_seeds: Vec<PeerAddress>,
 
     sdn_alias_requester: AliasServiceRequester,
+    // This service is for proxy from internet to agent
     sdn_proxy_service: P2pService,
+    // This service is for tunnel from agent to outside
+    sdn_tunnel_service: P2pService,
+    tunnel_service_ctx: TunnelServiceCtx,
+    tunnel_service_handle: TSH,
 
     agent_quic_sessions: HashMap<AgentId, HashMap<AgentSessionId, AgentSession<TunnelQuicStream>>>,
     agent_tcp_sessions: HashMap<AgentId, HashMap<AgentSessionId, AgentSession<TunnelTcpStream>>>,
@@ -68,8 +101,13 @@ pub struct QuicRelayer<VALIDATE, REQ> {
     ticker: Interval,
 }
 
-impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'static> QuicRelayer<VALIDATE, REQ> {
-    pub async fn new(cfg: QuicRelayerConfig, validate: VALIDATE) -> anyhow::Result<Self> {
+impl<VALIDATE, REQ, TSH> QuicRelayer<VALIDATE, REQ, TSH>
+where
+    VALIDATE: ClusterValidator<REQ>,
+    REQ: DeserializeOwned + Send + Sync + 'static,
+    TSH: TunnelServiceHandle + Send + Sync + 'static,
+{
+    pub async fn new(mut cfg: QuicRelayerConfig<TSH>, validate: VALIDATE) -> anyhow::Result<Self> {
         let mut sdn = P2pNetwork::new(P2pNetworkConfig {
             addr: cfg.sdn_listener,
             advertise: cfg.sdn_advertise_address,
@@ -79,10 +117,16 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
         })
         .await?;
 
-        let mut sdn_alias: AliasService = AliasService::new(sdn.create_service(0.into()));
+        let mut sdn_alias: AliasService = AliasService::new(sdn.create_service(ALIAS_SERVICE.into()));
         let sdn_alias_requester = sdn_alias.requester();
         tokio::spawn(async move { while let Ok(_) = sdn_alias.recv().await {} });
-        let sdn_proxy_service = sdn.create_service(1.into());
+        let sdn_proxy_service = sdn.create_service(PROXY_TO_AGENT_SERVICE.into());
+        let sdn_tunnel_service = sdn.create_service(TUNNEL_TO_CLUSTER_SERIVCE.into());
+        let tunnel_service_ctx = TunnelServiceCtx {
+            service: sdn_tunnel_service.requester(),
+            alias: sdn_alias_requester.clone(),
+        };
+        cfg.tunnel_service_handle.start(&tunnel_service_ctx);
 
         Ok(Self {
             agent_quic: AgentQuicListener::new(cfg.agent_listener, cfg.agent_key, cfg.agent_cert, validate).await?,
@@ -96,6 +140,9 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
             sdn,
             sdn_alias_requester,
             sdn_proxy_service,
+            sdn_tunnel_service,
+            tunnel_service_handle: cfg.tunnel_service_handle,
+            tunnel_service_ctx,
 
             agent_quic_sessions: HashMap::new(),
             agent_tcp_sessions: HashMap::new(),
@@ -135,46 +182,48 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
         });
     }
 
-    pub async fn recv(&mut self) -> anyhow::Result<()> {
+    pub async fn recv(&mut self) -> anyhow::Result<QuicRelayerEvent> {
         select! {
             _ = self.ticker.tick() => {
                 self.process_tick();
-                Ok(())
+                Ok(QuicRelayerEvent::Continue)
             },
             tunnel = self.http_proxy.recv() => {
                 let (dest, tunnel) = tunnel?;
                 self.process_proxy(tunnel, dest, true);
-                Ok(())
+                Ok(QuicRelayerEvent::Continue)
             },
             tunnel = self.tls_proxy.recv() => {
                 let (dest, tunnel) = tunnel?;
                 self.process_proxy(tunnel, dest, true);
-                Ok(())
+                Ok(QuicRelayerEvent::Continue)
             },
             tunnel = self.rtsp_proxy.recv() => {
                 let (dest, tunnel) = tunnel?;
                 self.process_proxy(tunnel, dest, true);
-                Ok(())
+                Ok(QuicRelayerEvent::Continue)
             },
             tunnel = self.rtsps_proxy.recv() => {
                 let (dest, tunnel) = tunnel?;
                 self.process_proxy(tunnel, dest, true);
-                Ok(())
+                Ok(QuicRelayerEvent::Continue)
             },
             _ = self.sdn.recv() =>  {
-                Ok(())
+                Ok(QuicRelayerEvent::Continue)
             },
             event = self.agent_quic.recv() => match event? {
                 AgentListenerEvent::Connected(agent_id, mut agent_session) => {
+                    let session_id = agent_session.session_id();
+                    let domain = agent_session.domain().to_owned();
                     log::info!("[QuicRelayer] agent {agent_id} {} connected", agent_session.session_id());
                     let alias = self.sdn_alias_requester.register(*agent_id);
                     agent_session.set_alias_guard(alias);
                     self.agent_quic_sessions.entry(agent_id).or_default().insert(agent_session.session_id(), agent_session);
-                    Ok(())
+                    Ok(QuicRelayerEvent::AgentConnected(agent_id, session_id, domain))
                 },
                 AgentListenerEvent::IncomingStream(agent_id, stream) => {
-                    //TODO process here
-                    Ok(())
+                    self.tunnel_service_handle.on_agent_conn(&self.tunnel_service_ctx, agent_id, stream);
+                    Ok(QuicRelayerEvent::Continue)
                 }
                 AgentListenerEvent::Disconnected(agent_id, session_id) => {
                     log::info!("[QuicRelayer] agent {agent_id} {session_id} disconnected");
@@ -185,20 +234,22 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
                             self.agent_quic_sessions.remove(&agent_id);
                         }
                     }
-                    Ok(())
+                    Ok(QuicRelayerEvent::AgentDisconnected(agent_id, session_id))
                 },
             },
             event = self.agent_tcp.recv() => match event? {
                 AgentListenerEvent::Connected(agent_id, mut agent_session) => {
                     log::info!("[QuicRelayer] agent {agent_id} {} connected", agent_session.session_id());
+                    let session_id = agent_session.session_id();
+                    let domain = agent_session.domain().to_owned();
                     let alias = self.sdn_alias_requester.register(*agent_id);
                     agent_session.set_alias_guard(alias);
                     self.agent_tcp_sessions.entry(agent_id).or_default().insert(agent_session.session_id(), agent_session);
-                    Ok(())
+                    Ok(QuicRelayerEvent::AgentConnected(agent_id, session_id, domain))
                 },
                 AgentListenerEvent::IncomingStream(agent_id, stream) => {
-                    //TODO process here
-                    Ok(())
+                    self.tunnel_service_handle.on_agent_conn(&self.tunnel_service_ctx, agent_id, stream);
+                    Ok(QuicRelayerEvent::Continue)
                 }
                 AgentListenerEvent::Disconnected(agent_id, session_id) => {
                     log::info!("[QuicRelayer] agent {agent_id} {session_id} disconnected");
@@ -209,24 +260,28 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
                             self.agent_tcp_sessions.remove(&agent_id);
                         }
                     }
-                    Ok(())
+                    Ok(QuicRelayerEvent::AgentDisconnected(agent_id, session_id))
                 },
             },
             event = self.sdn_proxy_service.recv() => match event.expect("sdn channel crash") {
                 P2pServiceEvent::Unicast(from, ..) => {
                     log::warn!("[QuicRelayer] proxy service don't accept unicast msg from {from}");
-                    Ok(())
+                    Ok(QuicRelayerEvent::Continue)
                 },
                 P2pServiceEvent::Broadcast(from, ..) => {
                     log::warn!("[QuicRelayer] proxy service don't accept broadcast msg from {from}");
-                    Ok(())
+                    Ok(QuicRelayerEvent::Continue)
                 },
                 P2pServiceEvent::Stream(_from, meta, stream) => {
                     if let Ok(proxy_dest) = bincode::deserialize::<ProxyDestination>(&meta) {
                         self.process_proxy(stream, proxy_dest, false);
                     }
-                    Ok(())
+                    Ok(QuicRelayerEvent::Continue)
                 },
+            },
+            event = self.sdn_tunnel_service.recv() => {
+                self.tunnel_service_handle.on_cluster_event(&self.tunnel_service_ctx, event.expect("sdn channel crash"));
+                Ok(QuicRelayerEvent::Continue)
             },
             _ = tokio::signal::ctrl_c() => {
                 log::info!("[QuicRelayer] shutdown inprogress");
@@ -234,7 +289,7 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
                 self.agent_quic.shutdown().await;
 
                 log::info!("[QuicRelayer] shutdown done");
-                Ok(())
+                Ok(QuicRelayerEvent::Continue)
             }
         }
     }
@@ -251,7 +306,7 @@ async fn proxy_local_to_agent<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 
     log::info!("[ProxyLocal] created stream to agent => writing connect request");
     write_object::<_, _, 500>(
         &mut stream,
-        AgentTunnelRequest {
+        &AgentTunnelRequest {
             service: dest.service,
             tls: dest.tls,
             domain: dest.domain,

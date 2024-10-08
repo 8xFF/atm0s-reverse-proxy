@@ -27,10 +27,13 @@ httparse = { workspace = true }
 tls-parser = { workspace = true }
 rtsp-types = { workspace = true }
 bincode = { workspace = true }
+poem = { workspace = true, optional = true }
+metrics = { workspace = true }
 
 [dev-dependencies]
 test-log = { workspace = true }
 
 [features]
 default = ["binary"]
-binary = ["protocol-ed25519"]
+expose-metrics = ["metrics-dashboard", "poem"]
+binary = ["protocol-ed25519", "expose-metrics"]

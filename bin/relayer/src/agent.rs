@@ -28,15 +28,17 @@ enum AgentSessionControl<S> {
 pub struct AgentSession<S> {
     agent_id: AgentId,
     session_id: AgentSessionId,
+    domain: String,
     control_tx: Sender<AgentSessionControl<S>>,
     alias_guard: Option<Arc<AliasGuard>>,
 }
 
 impl<S> AgentSession<S> {
-    fn new(agent_id: AgentId, session_id: AgentSessionId, control_tx: Sender<AgentSessionControl<S>>) -> Self {
+    fn new(agent_id: AgentId, session_id: AgentSessionId, domain: String, control_tx: Sender<AgentSessionControl<S>>) -> Self {
         Self {
             agent_id,
             session_id,
+            domain,
             control_tx,
             alias_guard: None,
         }
@@ -53,6 +55,7 @@ impl<S> Clone for AgentSession<S> {
         Self {
             agent_id: self.agent_id,
             session_id: self.session_id,
+            domain: self.domain.clone(),
             control_tx: self.control_tx.clone(),
             alias_guard: self.alias_guard.clone(),
         }
@@ -73,6 +76,10 @@ pub trait AgentListener<S: AsyncRead + AsyncWrite> {
 impl<S: AsyncRead + AsyncWrite + Send + Sync + 'static> AgentSession<S> {
     pub fn session_id(&self) -> AgentSessionId {
         self.session_id
+    }
+
+    pub fn domain(&self) -> &str {
+        &self.domain
     }
 
     pub async fn create_stream(&self) -> anyhow::Result<S> {
