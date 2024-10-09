@@ -13,3 +13,5 @@ bincode = { workspace = true }
 tokio = { workspace = true, features = ["io-util"] }
 log = { workspace = true }
 anyhow = { workspace = true }
+tokio-util = { workspace = true, features = ["codec"] }
+derive_more = { workspace = true, features = ["from", "into", "deref"] }

@@ -1,0 +1,40 @@
+[package]
+name = "atm0s-reverse-proxy-relayer"
+version = "0.3.0"
+edition = "2021"
+description = "Server for atm0s-reverse proxy cluster"
+license = "MIT"
+
+[dependencies]
+p2p = { workspace = true }
+protocol = { workspace = true }
+protocol-ed25519 = { workspace = true, optional = true }
+metrics-dashboard = { workspace = true, features = ["system"], optional = true }
+tokio = { workspace = true, features = ["full"] }
+clap = { workspace = true, features = ["derive", "env", "color"] }
+quinn = { workspace = true, features = ["ring", "runtime-tokio", "futures-io"] }
+rustls = { workspace = true, features = ["ring", "std"] }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+derive_more = { workspace = true, features = ["from", "into", "deref", "display"] }
+log = { workspace = true }
+serde = { workspace = true }
+rand = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "std"] }
+futures = { workspace = true }
+parking_lot = { workspace = true }
+httparse = { workspace = true }
+tls-parser = { workspace = true }
+rtsp-types = { workspace = true }
+bincode = { workspace = true }
+poem = { workspace = true, optional = true }
+metrics = { workspace = true }
+tokio-yamux = { workspace = true }
+
+[dev-dependencies]
+test-log = { workspace = true }
+
+[features]
+default = ["binary"]
+expose-metrics = ["metrics-dashboard", "poem"]
+binary = ["protocol-ed25519", "expose-metrics"]

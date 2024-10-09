@@ -8,9 +8,9 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+protocol = { workspace = true }
 bincode = { workspace = true }
 ed25519-dalek = { workspace = true, features = ["rand_core", "serde", "pkcs8", "pem"] }
 rand = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-protocol = { path = "../protocol", package = "atm0s-reverse-proxy-protocol", version = "0.2.1" }
 anyhow = { workspace = true }

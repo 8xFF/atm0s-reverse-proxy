@@ -46,10 +46,7 @@ impl AgentLocalKey {
     }
 
     pub fn to_pem(&self) -> String {
-        let key = self
-            .sign_key
-            .to_pkcs8_pem(LineEnding::CRLF)
-            .expect("Should ok");
+        let key = self.sign_key.to_pkcs8_pem(LineEnding::CRLF).expect("Should ok");
         key.to_string()
     }
 }
@@ -92,25 +89,15 @@ impl ClusterValidator<RegisterRequest> for ClusterValidatorImpl {
     }
 
     fn generate_domain(&self, req: &RegisterRequest) -> anyhow::Result<String> {
-        Ok(format!(
-            "{}.{}",
-            convert_hex(&req.pub_key.to_bytes()[0..16]),
-            self.root_domain
-        ))
+        Ok(format!("{}.{}", convert_hex(&req.pub_key.to_bytes()[0..16]), self.root_domain))
     }
 
     fn sign_response_res(&self, m: &RegisterRequest, err: Option<String>) -> Vec<u8> {
         if let Some(err) = err {
-            bincode::serialize(&RegisterResponse { response: Err(err) })
-                .expect("should serialize")
-                .to_vec()
+            bincode::serialize(&RegisterResponse { response: Err(err) }).expect("should serialize").to_vec()
         } else {
             bincode::serialize(&RegisterResponse {
-                response: Ok(format!(
-                    "{}.{}",
-                    convert_hex(&m.pub_key.to_bytes()[0..16]),
-                    self.root_domain
-                )),
+                response: Ok(format!("{}.{}", convert_hex(&m.pub_key.to_bytes()[0..16]), self.root_domain)),
             })
             .expect("should serialize")
             .to_vec()

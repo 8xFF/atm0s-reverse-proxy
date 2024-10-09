@@ -2,10 +2,16 @@
 resolver = "2"
 
 members = [
+    "bin/agent",
+    "bin/relayer",
     "crates/*",
 ]
 
 [workspace.dependencies]
+p2p = { package = "atm0s-small-p2p", git = "https://github.com/8xFF/atm0s-small-p2p.git", rev = "14e963e0b26dad9b6e57d9cd74bf5c976cf1a762" }
+protocol = { path = "crates/protocol", package = "atm0s-reverse-proxy-protocol", version = "0.2.1" }
+protocol-ed25519 = { path = "crates/protocol_ed25519", package = "atm0s-reverse-proxy-protocol-ed25519", version = "0.1.3" }
+
 log = "0.4"
 tokio-yamux = "0.3"
 clap = "4.4"
@@ -34,6 +40,9 @@ thiserror = "1.0"
 anyhow = "1.0"
 parking_lot = "0.12"
 futures = "0.3"
+tokio-util = "0.7"
+test-log = "0.2"
+lru = "0.12"
 
 [profile.release]
 strip = true  # Automatically strip symbols from the binary.

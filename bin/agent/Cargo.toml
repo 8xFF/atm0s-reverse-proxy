@@ -1,0 +1,31 @@
+[package]
+name = "atm0s-reverse-proxy-agent"
+version = "0.2.0"
+edition = "2021"
+description = "Agent for reverse proxy cluster"
+license = "MIT"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+protocol = { workspace = true }
+protocol-ed25519 = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["full"] }
+futures = { version = "0.3" }
+async-trait = { workspace = true }
+clap = { workspace = true, features = ["derive", "env"] }
+log = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "std"], optional = true }
+tokio-yamux = { workspace = true }
+bincode = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+quinn = { workspace = true, features = ["ring", "runtime-tokio", "futures-io"] }
+rustls = { workspace = true, features = ["ring", "std"] }
+url = { workspace = true }
+base64 = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+[features]
+default = ["binary"]
+binary = ["protocol-ed25519", "tracing-subscriber"]
