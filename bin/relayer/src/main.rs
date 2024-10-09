@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 
 use atm0s_reverse_proxy_relayer::{QuicRelayer, QuicRelayerConfig, TunnelServiceHandle};
 use clap::Parser;
+use p2p::SharedKeyHandshake;
 use protocol::{DEFAULT_CLUSTER_CERT, DEFAULT_CLUSTER_KEY, DEFAULT_TUNNEL_CERT, DEFAULT_TUNNEL_KEY};
 use protocol_ed25519::ClusterValidatorImpl;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
@@ -36,6 +37,10 @@ struct Args {
     /// This option is useful with high performance relay node
     #[arg(env, long)]
     sdn_advertise_address: Option<SocketAddr>,
+
+    /// Shared key for validate network connection
+    #[arg(env, long, default_value = "insecure")]
+    sdn_secure_key: String,
 
     /// TCP port for serving HTTP connection
     #[arg(env, long, default_value = "0.0.0.0:80")]
@@ -86,6 +91,7 @@ async fn main() {
         sdn_key: default_cluster_key,
         sdn_cert: default_cluster_cert,
         sdn_seeds: args.sdn_seeds.into_iter().map(|a| a.parse().expect("should parse to PeerAddress")).collect::<Vec<_>>(),
+        sdn_secure: SharedKeyHandshake::from(args.sdn_secure_key.as_str()),
         sdn_advertise_address: args.sdn_advertise_address,
         tunnel_service_handle: DummyTunnelHandle,
     };
