@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-relayer-v0.3.0...atm0s-reverse-proxy-relayer-v0.4.0) - 2024-10-09
+
+### Added
+
+- update sdn for network connect authorizing ([#73](https://github.com/8xFF/atm0s-reverse-proxy/pull/73))
+
+### Other
+
+- small-sdn with quic ([#70](https://github.com/8xFF/atm0s-reverse-proxy/pull/70))
+
 ## [0.3.0](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-relayer-v0.2.0...atm0s-reverse-proxy-relayer-v0.3.0) - 2024-10-04
 
 ### Other

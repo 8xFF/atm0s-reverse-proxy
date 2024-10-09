@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-reverse-proxy-agent"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "Agent for reverse proxy cluster"
 license = "MIT"
