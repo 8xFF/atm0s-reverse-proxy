@@ -8,7 +8,7 @@ use agent::{
 use anyhow::anyhow;
 use p2p::{
     alias_service::{AliasService, AliasServiceRequester},
-    ErrorExt, P2pNetwork, P2pNetworkConfig, P2pService, P2pServiceEvent, P2pServiceRequester, PeerAddress, PeerId,
+    ErrorExt, HandshakeProtocol, P2pNetwork, P2pNetworkConfig, P2pService, P2pServiceEvent, P2pServiceRequester, PeerAddress, PeerId,
 };
 use protocol::{
     cluster::{write_object, AgentTunnelRequest},
@@ -50,7 +50,7 @@ pub trait TunnelServiceHandle {
     fn on_cluster_event(&mut self, _ctx: &TunnelServiceCtx, _event: P2pServiceEvent);
 }
 
-pub struct QuicRelayerConfig<TSH> {
+pub struct QuicRelayerConfig<SECURE, TSH> {
     pub agent_listener: SocketAddr,
     pub proxy_http_listener: SocketAddr,
     pub proxy_tls_listener: SocketAddr,
@@ -66,6 +66,7 @@ pub struct QuicRelayerConfig<TSH> {
     pub sdn_key: PrivatePkcs8KeyDer<'static>,
     pub sdn_cert: CertificateDer<'static>,
     pub sdn_advertise_address: Option<SocketAddr>,
+    pub sdn_secure: SECURE,
 
     pub tunnel_service_handle: TSH,
 }
@@ -76,7 +77,7 @@ pub enum QuicRelayerEvent {
     Continue,
 }
 
-pub struct QuicRelayer<VALIDATE, REQ, TSH> {
+pub struct QuicRelayer<SECURE, VALIDATE, REQ, TSH> {
     agent_quic: AgentQuicListener<VALIDATE, REQ>,
     agent_tcp: AgentTcpListener<VALIDATE, REQ>,
     http_proxy: ProxyTcpListener<HttpDestinationDetector>,
@@ -84,7 +85,7 @@ pub struct QuicRelayer<VALIDATE, REQ, TSH> {
     rtsp_proxy: ProxyTcpListener<RtspDestinationDetector>,
     rtsps_proxy: ProxyTcpListener<TlsDestinationDetector>,
 
-    sdn: P2pNetwork,
+    sdn: P2pNetwork<SECURE>,
 
     sdn_alias_requester: AliasServiceRequester,
     // This service is for proxy from internet to agent
@@ -98,13 +99,14 @@ pub struct QuicRelayer<VALIDATE, REQ, TSH> {
     agent_tcp_sessions: HashMap<AgentId, HashMap<AgentSessionId, AgentSession<TunnelTcpStream>>>,
 }
 
-impl<VALIDATE, REQ, TSH> QuicRelayer<VALIDATE, REQ, TSH>
+impl<SECURE, VALIDATE, REQ, TSH> QuicRelayer<SECURE, VALIDATE, REQ, TSH>
 where
+    SECURE: HandshakeProtocol,
     VALIDATE: ClusterValidator<REQ>,
     REQ: DeserializeOwned + Send + Sync + 'static,
     TSH: TunnelServiceHandle + Send + Sync + 'static,
 {
-    pub async fn new(mut cfg: QuicRelayerConfig<TSH>, validate: VALIDATE) -> anyhow::Result<Self> {
+    pub async fn new(mut cfg: QuicRelayerConfig<SECURE, TSH>, validate: VALIDATE) -> anyhow::Result<Self> {
         let mut sdn = P2pNetwork::new(P2pNetworkConfig {
             peer_id: cfg.sdn_peer_id,
             listen_addr: cfg.sdn_listener,
@@ -113,6 +115,7 @@ where
             cert: cfg.sdn_cert,
             tick_ms: 1000,
             seeds: cfg.sdn_seeds,
+            secure: cfg.sdn_secure,
         })
         .await?;
 
@@ -166,7 +169,7 @@ where
         }
     }
 
-    pub fn p2p(&mut self) -> &mut P2pNetwork {
+    pub fn p2p(&mut self) -> &mut P2pNetwork<SECURE> {
         &mut self.sdn
     }
 
