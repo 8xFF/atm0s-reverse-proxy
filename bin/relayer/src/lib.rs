@@ -369,7 +369,7 @@ async fn proxy_to_cluster<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'sta
     histogram!(METRICS_TUNNEL_CLUSTER_HISTOGRAM).record(started.elapsed().as_millis() as f32 / 1000.0);
 
     log::info!("[ProxyLocal] proxy over {dest_node} ...");
-    gauge!(METRICS_TUNNEL_AGENT_LIVE).increment(1.0);
+    gauge!(METRICS_TUNNEL_CLUSTER_LIVE).increment(1.0);
     gauge!(METRICS_PROXY_CLUSTER_LIVE).increment(1.0);
     gauge!(METRICS_PROXY_HTTP_LIVE).increment(1.0);
 
@@ -383,7 +383,7 @@ async fn proxy_to_cluster<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'sta
     }
 
     gauge!(METRICS_PROXY_HTTP_LIVE).decrement(1.0);
-    gauge!(METRICS_PROXY_AGENT_LIVE).decrement(1.0);
-    gauge!(METRICS_TUNNEL_AGENT_LIVE).decrement(1.0);
+    gauge!(METRICS_PROXY_CLUSTER_LIVE).decrement(1.0);
+    gauge!(METRICS_TUNNEL_CLUSTER_LIVE).decrement(1.0);
     Ok(())
 }
