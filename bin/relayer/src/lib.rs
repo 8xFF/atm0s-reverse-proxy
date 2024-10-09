@@ -79,7 +79,7 @@ pub enum QuicRelayerEvent {
 
 pub struct QuicRelayer<VALIDATE, REQ, TSH> {
     agent_quic: AgentQuicListener<VALIDATE, REQ>,
-    agent_tcp: AgentTcpListener,
+    agent_tcp: AgentTcpListener<VALIDATE, REQ>,
     http_proxy: ProxyTcpListener<HttpDestinationDetector>,
     tls_proxy: ProxyTcpListener<TlsDestinationDetector>,
     rtsp_proxy: ProxyTcpListener<RtspDestinationDetector>,
@@ -131,8 +131,8 @@ where
         cfg.tunnel_service_handle.start(&tunnel_service_ctx);
 
         Ok(Self {
-            agent_quic: AgentQuicListener::new(cfg.agent_listener, cfg.agent_key, cfg.agent_cert, validate).await?,
-            agent_tcp: AgentTcpListener::new(cfg.agent_listener).await?,
+            agent_quic: AgentQuicListener::new(cfg.agent_listener, cfg.agent_key, cfg.agent_cert, validate.clone()).await?,
+            agent_tcp: AgentTcpListener::new(cfg.agent_listener, validate).await?,
             http_proxy: ProxyTcpListener::new(cfg.proxy_http_listener, Default::default()).await?,
             tls_proxy: ProxyTcpListener::new(cfg.proxy_tls_listener, Default::default()).await?,
             rtsp_proxy: ProxyTcpListener::new(cfg.proxy_rtsp_listener, Default::default()).await?,

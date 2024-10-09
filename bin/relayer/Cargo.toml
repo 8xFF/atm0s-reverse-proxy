@@ -29,6 +29,7 @@ rtsp-types = { workspace = true }
 bincode = { workspace = true }
 poem = { workspace = true, optional = true }
 metrics = { workspace = true }
+tokio-yamux = { workspace = true }
 
 [dev-dependencies]
 test-log = { workspace = true }
