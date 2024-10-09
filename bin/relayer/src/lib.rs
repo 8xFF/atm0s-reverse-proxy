@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr, time::Duration};
+use std::{collections::HashMap, net::SocketAddr};
 
 use agent::{
     quic::AgentQuicListener,
@@ -21,7 +21,6 @@ use serde::de::DeserializeOwned;
 use tokio::{
     io::{copy_bidirectional, AsyncRead, AsyncWrite},
     select,
-    time::Interval,
 };
 
 mod agent;
@@ -86,7 +85,6 @@ pub struct QuicRelayer<VALIDATE, REQ, TSH> {
     rtsps_proxy: ProxyTcpListener<TlsDestinationDetector>,
 
     sdn: P2pNetwork,
-    sdn_seeds: Vec<PeerAddress>,
 
     sdn_alias_requester: AliasServiceRequester,
     // This service is for proxy from internet to agent
@@ -98,8 +96,6 @@ pub struct QuicRelayer<VALIDATE, REQ, TSH> {
 
     agent_quic_sessions: HashMap<AgentId, HashMap<AgentSessionId, AgentSession<TunnelQuicStream>>>,
     agent_tcp_sessions: HashMap<AgentId, HashMap<AgentSessionId, AgentSession<TunnelTcpStream>>>,
-
-    ticker: Interval,
 }
 
 impl<VALIDATE, REQ, TSH> QuicRelayer<VALIDATE, REQ, TSH>
@@ -116,6 +112,7 @@ where
             priv_key: cfg.sdn_key,
             cert: cfg.sdn_cert,
             tick_ms: 1000,
+            seeds: cfg.sdn_seeds,
         })
         .await?;
 
@@ -138,7 +135,6 @@ where
             rtsp_proxy: ProxyTcpListener::new(cfg.proxy_rtsp_listener, Default::default()).await?,
             rtsps_proxy: ProxyTcpListener::new(cfg.proxy_rtsps_listener, Default::default()).await?,
 
-            sdn_seeds: cfg.sdn_seeds,
             sdn,
             sdn_alias_requester,
             sdn_proxy_service,
@@ -148,8 +144,6 @@ where
 
             agent_quic_sessions: HashMap::new(),
             agent_tcp_sessions: HashMap::new(),
-
-            ticker: tokio::time::interval(Duration::from_secs(5)),
         })
     }
 
@@ -172,28 +166,12 @@ where
         }
     }
 
-    fn process_tick(&mut self) {
-        let seeds = self.sdn_seeds.clone();
-        let sdn_requester = self.sdn.requester();
-        tokio::spawn(async move {
-            for seed in seeds {
-                if let Err(e) = sdn_requester.connect(seed.clone()).await {
-                    log::error!("[QuicRelayer] connect to {seed:?} error {e}");
-                }
-            }
-        });
-    }
-
     pub fn p2p(&mut self) -> &mut P2pNetwork {
         &mut self.sdn
     }
 
     pub async fn recv(&mut self) -> anyhow::Result<QuicRelayerEvent> {
         select! {
-            _ = self.ticker.tick() => {
-                self.process_tick();
-                Ok(QuicRelayerEvent::Continue)
-            },
             tunnel = self.http_proxy.recv() => {
                 let (dest, tunnel) = tunnel?;
                 self.process_proxy(tunnel, dest, true);
