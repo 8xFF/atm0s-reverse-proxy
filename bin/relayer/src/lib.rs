@@ -8,7 +8,7 @@ use agent::{
 use anyhow::anyhow;
 use p2p::{
     alias_service::{AliasService, AliasServiceRequester},
-    ErrorExt, P2pNetwork, P2pNetworkConfig, P2pService, P2pServiceEvent, P2pServiceRequester, PeerAddress,
+    ErrorExt, P2pNetwork, P2pNetworkConfig, P2pService, P2pServiceEvent, P2pServiceRequester, PeerAddress, PeerId,
 };
 use protocol::{
     cluster::{write_object, AgentTunnelRequest},
@@ -53,7 +53,6 @@ pub trait TunnelServiceHandle {
 
 pub struct QuicRelayerConfig<TSH> {
     pub agent_listener: SocketAddr,
-    pub sdn_listener: SocketAddr,
     pub proxy_http_listener: SocketAddr,
     pub proxy_tls_listener: SocketAddr,
     pub proxy_rtsp_listener: SocketAddr,
@@ -62,6 +61,8 @@ pub struct QuicRelayerConfig<TSH> {
     pub agent_key: PrivatePkcs8KeyDer<'static>,
     pub agent_cert: CertificateDer<'static>,
 
+    pub sdn_peer_id: PeerId,
+    pub sdn_listener: SocketAddr,
     pub sdn_seeds: Vec<PeerAddress>,
     pub sdn_key: PrivatePkcs8KeyDer<'static>,
     pub sdn_cert: CertificateDer<'static>,
@@ -109,8 +110,9 @@ where
 {
     pub async fn new(mut cfg: QuicRelayerConfig<TSH>, validate: VALIDATE) -> anyhow::Result<Self> {
         let mut sdn = P2pNetwork::new(P2pNetworkConfig {
-            addr: cfg.sdn_listener,
-            advertise: cfg.sdn_advertise_address,
+            peer_id: cfg.sdn_peer_id,
+            listen_addr: cfg.sdn_listener,
+            advertise: cfg.sdn_advertise_address.map(|a| a.into()),
             priv_key: cfg.sdn_key,
             cert: cfg.sdn_cert,
             tick_ms: 1000,
@@ -175,8 +177,8 @@ where
         let sdn_requester = self.sdn.requester();
         tokio::spawn(async move {
             for seed in seeds {
-                if let Err(e) = sdn_requester.connect(seed).await {
-                    log::error!("[QuicRelayer] connect to {seed} error {e}");
+                if let Err(e) = sdn_requester.connect(seed.clone()).await {
+                    log::error!("[QuicRelayer] connect to {seed:?} error {e}");
                 }
             }
         });

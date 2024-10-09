@@ -20,12 +20,16 @@ struct Args {
     agent_listener: SocketAddr,
 
     /// UDP/TCP port for serving QUIC/TCP connection for SDN network
+    #[arg(env, long)]
+    sdn_peer_id: u64,
+
+    /// UDP/TCP port for serving QUIC/TCP connection for SDN network
     #[arg(env, long, default_value = "0.0.0.0:11111")]
     sdn_listener: SocketAddr,
 
-    /// Seeds
+    /// Seeds with format: node1@IP1:PORT1,node2@IP2:PORT2
     #[arg(env, long, value_delimiter = ',')]
-    sdn_seeds: Vec<SocketAddr>,
+    sdn_seeds: Vec<String>,
 
     /// Allow it broadcast address to other peers
     /// This allows other peer can active connect to this node
@@ -71,16 +75,17 @@ async fn main() {
 
     let cfg = QuicRelayerConfig {
         agent_listener: args.agent_listener,
-        sdn_listener: args.sdn_listener,
         proxy_http_listener: args.proxy_http_listener,
         proxy_tls_listener: args.proxy_tls_listener,
         proxy_rtsp_listener: args.proxy_rtsp_listener,
         proxy_rtsps_listener: args.proxy_rtsps_listener,
         agent_key: default_tunnel_key,
         agent_cert: default_tunnel_cert,
+        sdn_peer_id: args.sdn_peer_id.into(),
+        sdn_listener: args.sdn_listener,
         sdn_key: default_cluster_key,
         sdn_cert: default_cluster_cert,
-        sdn_seeds: args.sdn_seeds.into_iter().map(|a| a.into()).collect::<Vec<_>>(),
+        sdn_seeds: args.sdn_seeds.into_iter().map(|a| a.parse().expect("should parse to PeerAddress")).collect::<Vec<_>>(),
         sdn_advertise_address: args.sdn_advertise_address,
         tunnel_service_handle: DummyTunnelHandle,
     };
