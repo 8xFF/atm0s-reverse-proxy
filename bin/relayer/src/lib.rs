@@ -148,7 +148,7 @@ where
         })
     }
 
-    fn process_proxy<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(&mut self, proxy: T, dest: ProxyDestination, allow_tunnel_cluster: bool) {
+    fn process_proxy<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(&mut self, proxy: T, dest: ProxyDestination, is_tunnel_cluster: bool) {
         let agent_id = dest.agent_id();
         if let Some(sessions) = self.agent_tcp_sessions.get(&agent_id) {
             let session = sessions.values().next().expect("should have session");
@@ -168,7 +168,7 @@ where
                     log::error!("[QuicRelayer] proxy to agent error {:?}", e);
                 };
             });
-        } else if allow_tunnel_cluster {
+        } else if is_tunnel_cluster {
             let sdn_requester = self.sdn_proxy_service.requester();
             let job = proxy_to_cluster(proxy, dest, self.sdn_alias_requester.clone(), sdn_requester);
             tokio::spawn(async move {
