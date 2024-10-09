@@ -1,6 +1,6 @@
-use std::{collections::HashMap, net::SocketAddr};
+use std::{collections::HashMap, net::SocketAddr, time::Instant};
 
-use ::metrics::{counter, gauge};
+use ::metrics::{counter, gauge, histogram};
 use agent::{
     quic::AgentQuicListener,
     tcp::{AgentTcpListener, TunnelTcpStream},
@@ -9,7 +9,7 @@ use agent::{
 use anyhow::anyhow;
 use p2p::{
     alias_service::{AliasService, AliasServiceRequester},
-    ErrorExt, P2pNetwork, P2pNetworkConfig, P2pService, P2pServiceEvent, P2pServiceRequester, PeerAddress, PeerId,
+    P2pNetwork, P2pNetworkConfig, P2pService, P2pServiceEvent, P2pServiceRequester, PeerAddress, PeerId,
 };
 use protocol::{
     cluster::{write_object, AgentTunnelRequest},
@@ -307,11 +307,15 @@ async fn proxy_local_to_agent<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 
     dest: ProxyDestination,
     agent: AgentSession<S>,
 ) -> anyhow::Result<()> {
+    let started = Instant::now();
     counter!(METRICS_PROXY_HTTP_COUNT).increment(1);
+    counter!(METRICS_TUNNEL_AGENT_COUNT).increment(1);
     log::info!("[ProxyLocal] creating stream to agent");
     let mut stream = agent.create_stream().await?;
 
+    histogram!(METRICS_TUNNEL_AGENT_HISTOGRAM).record(started.elapsed().as_millis() as f32 / 1000.0);
     log::info!("[ProxyLocal] created stream to agent => writing connect request");
+    gauge!(METRICS_TUNNEL_AGENT_LIVE).increment(1.0);
     write_object::<_, _, 500>(
         &mut stream,
         &AgentTunnelRequest {
@@ -333,8 +337,10 @@ async fn proxy_local_to_agent<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 
             log::error!("[ProxyLocal] proxy data with agent error {e}");
         }
     };
-    gauge!(METRICS_PROXY_AGENT_LIVE).decrement(1.0);
+
     gauge!(METRICS_PROXY_HTTP_LIVE).decrement(1.0);
+    gauge!(METRICS_PROXY_AGENT_LIVE).decrement(1.0);
+    gauge!(METRICS_TUNNEL_AGENT_LIVE).decrement(1.0);
     Ok(())
 }
 
@@ -344,7 +350,9 @@ async fn proxy_to_cluster<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'sta
     alias_requeser: AliasServiceRequester,
     sdn_requester: P2pServiceRequester,
 ) -> anyhow::Result<()> {
+    let started = Instant::now();
     counter!(METRICS_PROXY_CLUSTER_COUNT).increment(1);
+    counter!(METRICS_TUNNEL_CLUSTER_COUNT).increment(1);
     let agent_id = dest.agent_id();
     log::info!("[ProxyCluster] finding location of agent {agent_id}");
     let found_location = alias_requeser.find(*agent_id).await.ok_or(anyhow!("ALIAS_NOT_FOUND"))?;
@@ -358,8 +366,10 @@ async fn proxy_to_cluster<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'sta
     let meta = bincode::serialize(&dest).expect("should convert ProxyDestination to bytes");
 
     let mut stream = sdn_requester.open_stream(dest_node, meta).await?;
+    histogram!(METRICS_TUNNEL_CLUSTER_HISTOGRAM).record(started.elapsed().as_millis() as f32 / 1000.0);
 
     log::info!("[ProxyLocal] proxy over {dest_node} ...");
+    gauge!(METRICS_TUNNEL_AGENT_LIVE).increment(1.0);
     gauge!(METRICS_PROXY_CLUSTER_LIVE).increment(1.0);
     gauge!(METRICS_PROXY_HTTP_LIVE).increment(1.0);
 
@@ -372,7 +382,8 @@ async fn proxy_to_cluster<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'sta
         }
     }
 
-    gauge!(METRICS_PROXY_CLUSTER_LIVE).decrement(1.0);
     gauge!(METRICS_PROXY_HTTP_LIVE).decrement(1.0);
+    gauge!(METRICS_PROXY_AGENT_LIVE).decrement(1.0);
+    gauge!(METRICS_TUNNEL_AGENT_LIVE).decrement(1.0);
     Ok(())
 }
