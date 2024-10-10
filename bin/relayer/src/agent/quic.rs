@@ -1,6 +1,7 @@
-use std::{marker::PhantomData, net::SocketAddr, sync::Arc};
+use std::{marker::PhantomData, net::SocketAddr, sync::Arc, time::Instant};
 
 use anyhow::anyhow;
+use metrics::histogram;
 use protocol::{key::ClusterValidator, proxy::AgentId, stream::TunnelStream};
 use quinn::{Endpoint, Incoming, VarInt};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
@@ -13,6 +14,7 @@ use tokio::{
 use crate::{
     agent::AgentSessionControl,
     quic::{make_server_endpoint, TunnelQuicStream},
+    METRICS_AGENT_HISTOGRAM,
 };
 
 use super::{AgentListener, AgentListenerEvent, AgentSession, AgentSessionId};
@@ -58,6 +60,7 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
 }
 
 async fn run_connection<VALIDATE: ClusterValidator<REQ>, REQ>(validate: Arc<VALIDATE>, incoming: Incoming, internal_tx: Sender<AgentListenerEvent<TunnelQuicStream>>) -> anyhow::Result<()> {
+    let started = Instant::now();
     log::info!("[AgentQuic] new connection from {}", incoming.remote_address());
 
     let conn = incoming.await?;
@@ -84,6 +87,7 @@ async fn run_connection<VALIDATE: ClusterValidator<REQ>, REQ>(validate: Arc<VALI
         .expect("should send to main loop");
 
     log::info!("[AgentQuic] new connection {agent_id} {session_id}  started loop");
+    histogram!(METRICS_AGENT_HISTOGRAM).record(started.elapsed().as_millis() as f32 / 1000.0);
 
     loop {
         select! {
