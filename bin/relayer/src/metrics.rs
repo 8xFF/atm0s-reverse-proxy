@@ -39,18 +39,18 @@ pub fn describe_metrics() {
     describe_histogram!(METRICS_AGENT_HISTOGRAM, "Incoming agent connection accept time histogram");
     describe_counter!(METRICS_AGENT_COUNT, "Number of connected agents");
 
-    // this is for proxy from agent counting (incomming)
+    // this is for proxy from agent counting (incoming)
     describe_gauge!(METRICS_PROXY_AGENT_LIVE, "Live incoming proxy from agent to cluster");
     describe_counter!(METRICS_PROXY_AGENT_COUNT, "Number of incoming proxy from agent to cluster");
     describe_histogram!(METRICS_PROXY_AGENT_HISTOGRAM, "Incoming proxy from agent to cluster latency histogram");
     describe_counter!(METRICS_PROXY_AGENT_ERROR_COUNT, "Number of incoming proxy error from agent to cluster");
 
-    // this is for http proxy counting (incomming)
+    // this is for http proxy counting (incoming)
     describe_gauge!(METRICS_PROXY_HTTP_LIVE, "Live incoming http proxy");
     describe_counter!(METRICS_PROXY_HTTP_COUNT, "Number of incoming http proxy");
     describe_counter!(METRICS_PROXY_HTTP_ERROR_COUNT, "Number of incoming http proxy error");
 
-    // this is for cluster proxy (incomming)
+    // this is for cluster proxy (incoming)
     describe_gauge!(METRICS_PROXY_CLUSTER_LIVE, "Live incoming cluster proxy");
     describe_counter!(METRICS_PROXY_CLUSTER_COUNT, "Number of incoming cluster proxy");
     describe_counter!(METRICS_PROXY_CLUSTER_ERROR_COUNT, "Number of incoming cluster proxy error");

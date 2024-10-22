@@ -35,7 +35,7 @@ pub use proxy::{http::HttpDestinationDetector, rtsp::RtspDestinationDetector, tl
 
 const ALIAS_SERVICE: u16 = 0;
 const PROXY_TO_AGENT_SERVICE: u16 = 1;
-const TUNNEL_TO_CLUSTER_SERIVCE: u16 = 2;
+const TUNNEL_TO_CLUSTER_SERVICE: u16 = 2;
 
 #[derive(Clone)]
 pub struct TunnelServiceCtx {
@@ -121,9 +121,9 @@ where
 
         let mut sdn_alias = AliasService::new(sdn.create_service(ALIAS_SERVICE.into()));
         let sdn_alias_requester = sdn_alias.requester();
-        tokio::spawn(async move { while let Ok(_) = sdn_alias.recv().await {} });
+        tokio::spawn(async move { while sdn_alias.recv().await.is_ok() {} });
         let sdn_proxy_service = sdn.create_service(PROXY_TO_AGENT_SERVICE.into());
-        let sdn_tunnel_service = sdn.create_service(TUNNEL_TO_CLUSTER_SERIVCE.into());
+        let sdn_tunnel_service = sdn.create_service(TUNNEL_TO_CLUSTER_SERVICE.into());
         let tunnel_service_ctx = TunnelServiceCtx {
             service: sdn_tunnel_service.requester(),
             alias: sdn_alias_requester.clone(),
@@ -151,7 +151,13 @@ where
     }
 
     fn process_proxy<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(&mut self, proxy: T, dest: ProxyDestination, allow_tunnel_cluster: bool) {
-        let agent_id = dest.agent_id();
+        let agent_id = match dest.agent_id() {
+            Ok(agent_id) => agent_id,
+            Err(e) => {
+                log::warn!("[QuicRelayer] proxy to {dest:?} failed to get agent id: {e}");
+                return;
+            }
+        };
         if let Some(sessions) = self.agent_tcp_sessions.get(&agent_id) {
             let session = sessions.values().next().expect("should have session");
             tokio::spawn(proxy_local_to_agent(proxy, dest, session.clone()));
@@ -313,7 +319,7 @@ async fn proxy_to_cluster<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'sta
     alias_requeser: AliasServiceRequester,
     sdn_requester: P2pServiceRequester,
 ) -> anyhow::Result<()> {
-    let agent_id = dest.agent_id();
+    let agent_id = dest.agent_id()?;
     log::info!("[ProxyCluster] finding location of agent {agent_id}");
     let found_location = alias_requeser.find(*agent_id).await.ok_or(anyhow!("ALIAS_NOT_FOUND"))?;
     let dest_node = match found_location {

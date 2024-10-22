@@ -10,7 +10,7 @@ pub struct ClusterTunnelRequest {
 
 impl From<&ClusterTunnelRequest> for Vec<u8> {
     fn from(resp: &ClusterTunnelRequest) -> Self {
-        bincode::serialize(resp).expect("Should ok")
+        bincode::serialize(resp).expect("Should serialize cluster tunnel request")
     }
 }
 
@@ -29,7 +29,7 @@ pub struct ClusterTunnelResponse {
 
 impl From<&ClusterTunnelResponse> for Vec<u8> {
     fn from(resp: &ClusterTunnelResponse) -> Self {
-        bincode::serialize(resp).expect("Should ok")
+        bincode::serialize(resp).expect("Should serialize cluster tunnel response")
     }
 }
 
@@ -50,7 +50,7 @@ pub struct AgentTunnelRequest {
 
 impl From<&AgentTunnelRequest> for Vec<u8> {
     fn from(resp: &AgentTunnelRequest) -> Self {
-        bincode::serialize(resp).expect("Should ok")
+        bincode::serialize(resp).expect("Should serialize agent tunnel request")
     }
 }
 
