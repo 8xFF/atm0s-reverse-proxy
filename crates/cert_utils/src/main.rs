@@ -13,9 +13,9 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    let cert = rcgen::generate_simple_self_signed(args.domains).unwrap();
+    let cert = rcgen::generate_simple_self_signed(args.domains).expect("Should generate cert");
     let start = SystemTime::now();
     let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards").as_millis();
-    std::fs::write(format!("./certificate-{}.cert", since_the_epoch), cert.cert.der()).unwrap();
-    std::fs::write(format!("./certificate-{}.key", since_the_epoch), cert.key_pair.serialize_der()).unwrap();
+    std::fs::write(format!("./certificate-{}.cert", since_the_epoch), cert.cert.der()).expect("Should write cert");
+    std::fs::write(format!("./certificate-{}.key", since_the_epoch), cert.key_pair.serialize_der()).expect("Should write key");
 }

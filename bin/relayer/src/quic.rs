@@ -19,7 +19,7 @@ fn configure_server(priv_key: PrivatePkcs8KeyDer<'static>, cert: CertificateDer<
     let cert_chain = vec![cert];
 
     let mut server_config = ServerConfig::with_single_cert(cert_chain, priv_key.into())?;
-    let transport_config = Arc::get_mut(&mut server_config.transport).unwrap();
+    let transport_config = Arc::get_mut(&mut server_config.transport).expect("Should get transport config mut right after create server config");
     transport_config.max_concurrent_uni_streams(0_u8.into());
     transport_config.max_idle_timeout(Some(Duration::from_secs(30).try_into().expect("Should config timeout")));
 
