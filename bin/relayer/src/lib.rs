@@ -35,7 +35,7 @@ pub use proxy::{http::HttpDestinationDetector, rtsp::RtspDestinationDetector, tl
 
 const ALIAS_SERVICE: u16 = 0;
 const PROXY_TO_AGENT_SERVICE: u16 = 1;
-const TUNNEL_TO_CLUSTER_SERIVCE: u16 = 2;
+const TUNNEL_TO_CLUSTER_SERVICE: u16 = 2;
 
 #[derive(Clone)]
 pub struct TunnelServiceCtx {
@@ -123,7 +123,7 @@ where
         let sdn_alias_requester = sdn_alias.requester();
         tokio::spawn(async move { while let Ok(_) = sdn_alias.recv().await {} });
         let sdn_proxy_service = sdn.create_service(PROXY_TO_AGENT_SERVICE.into());
-        let sdn_tunnel_service = sdn.create_service(TUNNEL_TO_CLUSTER_SERIVCE.into());
+        let sdn_tunnel_service = sdn.create_service(TUNNEL_TO_CLUSTER_SERVICE.into());
         let tunnel_service_ctx = TunnelServiceCtx {
             service: sdn_tunnel_service.requester(),
             alias: sdn_alias_requester.clone(),
