@@ -1,6 +1,7 @@
-use std::{marker::PhantomData, net::SocketAddr, sync::Arc};
+use std::{marker::PhantomData, net::SocketAddr, sync::Arc, time::Instant};
 
 use futures::StreamExt;
+use metrics::histogram;
 use protocol::{key::ClusterValidator, proxy::AgentId};
 use serde::de::DeserializeOwned;
 use tokio::{
@@ -10,7 +11,7 @@ use tokio::{
     sync::mpsc::{channel, Receiver, Sender},
 };
 
-use crate::agent::AgentSessionControl;
+use crate::{agent::AgentSessionControl, METRICS_AGENT_HISTOGRAM};
 use tokio_yamux::{Session, StreamHandle};
 
 use super::{AgentListener, AgentListenerEvent, AgentSession, AgentSessionId};
@@ -61,6 +62,7 @@ async fn run_connection<VALIDATE: ClusterValidator<REQ>, REQ>(
     remote: SocketAddr,
     internal_tx: Sender<AgentListenerEvent<TunnelTcpStream>>,
 ) -> anyhow::Result<()> {
+    let started = Instant::now();
     log::info!("[AgentTcp] new connection from {}", remote);
 
     let mut buf = [0u8; 4096];
@@ -86,6 +88,7 @@ async fn run_connection<VALIDATE: ClusterValidator<REQ>, REQ>(
 
     log::info!("[AgentTcp] new connection {agent_id} {session_id}  started loop");
     let mut session = Session::new_client(in_stream, Default::default());
+    histogram!(METRICS_AGENT_HISTOGRAM).record(started.elapsed().as_millis() as f32 / 1000.0);
 
     loop {
         select! {

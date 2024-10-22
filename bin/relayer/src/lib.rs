@@ -1,5 +1,6 @@
-use std::{collections::HashMap, net::SocketAddr};
+use std::{collections::HashMap, net::SocketAddr, time::Instant};
 
+use ::metrics::{counter, gauge, histogram};
 use agent::{
     quic::AgentQuicListener,
     tcp::{AgentTcpListener, TunnelTcpStream},
@@ -8,7 +9,7 @@ use agent::{
 use anyhow::anyhow;
 use p2p::{
     alias_service::{AliasService, AliasServiceRequester},
-    ErrorExt, HandshakeProtocol, P2pNetwork, P2pNetworkConfig, P2pService, P2pServiceEvent, P2pServiceRequester, PeerAddress, PeerId,
+    HandshakeProtocol, P2pNetwork, P2pNetworkConfig, P2pService, P2pServiceEvent, P2pServiceRequester, PeerAddress, PeerId,
 };
 use protocol::{
     cluster::{write_object, AgentTunnelRequest},
@@ -150,7 +151,7 @@ where
         })
     }
 
-    fn process_proxy<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(&mut self, proxy: T, dest: ProxyDestination, allow_tunnel_cluster: bool) {
+    fn process_proxy<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(&mut self, proxy: T, dest: ProxyDestination, is_from_cluster: bool) {
         let agent_id = match dest.agent_id() {
             Ok(agent_id) => agent_id,
             Err(e) => {
@@ -160,18 +161,39 @@ where
         };
         if let Some(sessions) = self.agent_tcp_sessions.get(&agent_id) {
             let session = sessions.values().next().expect("should have session");
-            tokio::spawn(proxy_local_to_agent(proxy, dest, session.clone()));
+            let job = proxy_local_to_agent(is_from_cluster, proxy, dest, session.clone());
+            tokio::spawn(async move {
+                if let Err(e) = job.await {
+                    counter!(METRICS_PROXY_HTTP_ERROR_COUNT).increment(1);
+                    counter!(METRICS_TUNNEL_AGENT_ERROR_COUNT).increment(1);
+                    log::error!("[QuicRelayer] proxy to agent error {:?}", e);
+                };
+            });
         } else if let Some(sessions) = self.agent_quic_sessions.get(&agent_id) {
             let session = sessions.values().next().expect("should have session");
-            tokio::spawn(proxy_local_to_agent(proxy, dest, session.clone()));
-        } else if allow_tunnel_cluster {
+            let job = proxy_local_to_agent(is_from_cluster, proxy, dest, session.clone());
+            tokio::spawn(async move {
+                if let Err(e) = job.await {
+                    counter!(METRICS_PROXY_HTTP_ERROR_COUNT).increment(1);
+                    counter!(METRICS_TUNNEL_AGENT_ERROR_COUNT).increment(1);
+                    log::error!("[QuicRelayer] proxy to agent error {:?}", e);
+                };
+            });
+        } else if !is_from_cluster {
+            // we don't allow two times tunnel over cluster
             let sdn_requester = self.sdn_proxy_service.requester();
             let job = proxy_to_cluster(proxy, dest, self.sdn_alias_requester.clone(), sdn_requester);
             tokio::spawn(async move {
-                job.await.print_on_err("[QuicRelayer] proxy to cluster");
+                if let Err(e) = job.await {
+                    counter!(METRICS_PROXY_HTTP_ERROR_COUNT).increment(1);
+                    counter!(METRICS_TUNNEL_CLUSTER_ERROR_COUNT).increment(1);
+                    log::error!("[QuicRelayer] proxy to cluster error {:?}", e);
+                };
             });
         } else {
             log::warn!("[QuicRelayer] proxy to {dest:?} not match any kind");
+            counter!(METRICS_PROXY_CLUSTER_ERROR_COUNT).increment(1);
+            counter!(METRICS_TUNNEL_AGENT_ERROR_COUNT).increment(1);
         }
     }
 
@@ -183,22 +205,22 @@ where
         select! {
             tunnel = self.http_proxy.recv() => {
                 let (dest, tunnel) = tunnel?;
-                self.process_proxy(tunnel, dest, true);
+                self.process_proxy(tunnel, dest, false);
                 Ok(QuicRelayerEvent::Continue)
             },
             tunnel = self.tls_proxy.recv() => {
                 let (dest, tunnel) = tunnel?;
-                self.process_proxy(tunnel, dest, true);
+                self.process_proxy(tunnel, dest, false);
                 Ok(QuicRelayerEvent::Continue)
             },
             tunnel = self.rtsp_proxy.recv() => {
                 let (dest, tunnel) = tunnel?;
-                self.process_proxy(tunnel, dest, true);
+                self.process_proxy(tunnel, dest, false);
                 Ok(QuicRelayerEvent::Continue)
             },
             tunnel = self.rtsps_proxy.recv() => {
                 let (dest, tunnel) = tunnel?;
-                self.process_proxy(tunnel, dest, true);
+                self.process_proxy(tunnel, dest, false);
                 Ok(QuicRelayerEvent::Continue)
             },
             _ = self.sdn.recv() =>  {
@@ -206,12 +228,14 @@ where
             },
             event = self.agent_quic.recv() => match event? {
                 AgentListenerEvent::Connected(agent_id, mut agent_session) => {
+                    counter!(METRICS_AGENT_COUNT).increment(1);
                     let session_id = agent_session.session_id();
                     let domain = agent_session.domain().to_owned();
                     log::info!("[QuicRelayer] agent {agent_id} {} connected", agent_session.session_id());
                     let alias = self.sdn_alias_requester.register(*agent_id);
                     agent_session.set_alias_guard(alias);
                     self.agent_quic_sessions.entry(agent_id).or_default().insert(agent_session.session_id(), agent_session);
+                    gauge!(METRICS_AGENT_LIVE).increment(1.0);
                     Ok(QuicRelayerEvent::AgentConnected(agent_id, session_id, domain))
                 },
                 AgentListenerEvent::IncomingStream(agent_id, stream) => {
@@ -226,18 +250,21 @@ where
                             log::info!("[QuicRelayer] agent disconnected all connections {agent_id} {session_id}");
                             self.agent_quic_sessions.remove(&agent_id);
                         }
+                        gauge!(METRICS_AGENT_LIVE).decrement(1.0);
                     }
                     Ok(QuicRelayerEvent::AgentDisconnected(agent_id, session_id))
                 },
             },
             event = self.agent_tcp.recv() => match event? {
                 AgentListenerEvent::Connected(agent_id, mut agent_session) => {
+                    counter!(METRICS_AGENT_COUNT).increment(1);
                     log::info!("[QuicRelayer] agent {agent_id} {} connected", agent_session.session_id());
                     let session_id = agent_session.session_id();
                     let domain = agent_session.domain().to_owned();
                     let alias = self.sdn_alias_requester.register(*agent_id);
                     agent_session.set_alias_guard(alias);
                     self.agent_tcp_sessions.entry(agent_id).or_default().insert(agent_session.session_id(), agent_session);
+                    gauge!(METRICS_AGENT_LIVE).increment(1.0);
                     Ok(QuicRelayerEvent::AgentConnected(agent_id, session_id, domain))
                 },
                 AgentListenerEvent::IncomingStream(agent_id, stream) => {
@@ -252,6 +279,7 @@ where
                             log::info!("[QuicRelayer] agent disconnected all connections {agent_id} {session_id}");
                             self.agent_tcp_sessions.remove(&agent_id);
                         }
+                        gauge!(METRICS_AGENT_LIVE).decrement(1.0);
                     }
                     Ok(QuicRelayerEvent::AgentDisconnected(agent_id, session_id))
                 },
@@ -267,7 +295,7 @@ where
                 },
                 P2pServiceEvent::Stream(_from, meta, stream) => {
                     if let Ok(proxy_dest) = bincode::deserialize::<ProxyDestination>(&meta) {
-                        self.process_proxy(stream, proxy_dest, false);
+                        self.process_proxy(stream, proxy_dest, true);
                     }
                     Ok(QuicRelayerEvent::Continue)
                 },
@@ -289,13 +317,22 @@ where
 }
 
 async fn proxy_local_to_agent<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static, S: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(
+    is_from_cluster: bool,
     mut proxy: T,
     dest: ProxyDestination,
     agent: AgentSession<S>,
 ) -> anyhow::Result<()> {
+    let started = Instant::now();
+    if is_from_cluster {
+        counter!(METRICS_PROXY_CLUSTER_COUNT).increment(1);
+    } else {
+        counter!(METRICS_PROXY_HTTP_COUNT).increment(1);
+    }
+    counter!(METRICS_TUNNEL_AGENT_COUNT).increment(1);
     log::info!("[ProxyLocal] creating stream to agent");
     let mut stream = agent.create_stream().await?;
 
+    histogram!(METRICS_TUNNEL_AGENT_HISTOGRAM).record(started.elapsed().as_millis() as f32 / 1000.0);
     log::info!("[ProxyLocal] created stream to agent => writing connect request");
     write_object::<_, _, 500>(
         &mut stream,
@@ -308,8 +345,29 @@ async fn proxy_local_to_agent<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 
     .await?;
 
     log::info!("[ProxyLocal] proxy data with agent ...");
-    let res = copy_bidirectional(&mut proxy, &mut stream).await?;
-    log::info!("[ProxyLocal] proxy data with agent done with res {res:?}");
+
+    gauge!(METRICS_TUNNEL_AGENT_LIVE).increment(1.0);
+    if is_from_cluster {
+        gauge!(METRICS_PROXY_CLUSTER_LIVE).increment(1.0);
+    } else {
+        gauge!(METRICS_PROXY_HTTP_LIVE).increment(1.0);
+    }
+    match copy_bidirectional(&mut proxy, &mut stream).await {
+        Ok(res) => {
+            log::info!("[ProxyLocal] proxy data with agent done with res {res:?}");
+        }
+        Err(e) => {
+            log::error!("[ProxyLocal] proxy data with agent error {e}");
+        }
+    };
+
+    if is_from_cluster {
+        gauge!(METRICS_PROXY_CLUSTER_LIVE).decrement(1.0);
+    } else {
+        gauge!(METRICS_PROXY_HTTP_LIVE).decrement(1.0);
+    }
+    gauge!(METRICS_TUNNEL_AGENT_LIVE).decrement(1.0);
+
     Ok(())
 }
 
@@ -319,6 +377,9 @@ async fn proxy_to_cluster<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'sta
     alias_requeser: AliasServiceRequester,
     sdn_requester: P2pServiceRequester,
 ) -> anyhow::Result<()> {
+    let started = Instant::now();
+    counter!(METRICS_PROXY_HTTP_COUNT).increment(1);
+    counter!(METRICS_TUNNEL_CLUSTER_COUNT).increment(1);
     let agent_id = dest.agent_id()?;
     log::info!("[ProxyCluster] finding location of agent {agent_id}");
     let found_location = alias_requeser.find(*agent_id).await.ok_or(anyhow!("ALIAS_NOT_FOUND"))?;
@@ -332,9 +393,22 @@ async fn proxy_to_cluster<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'sta
     let meta = bincode::serialize(&dest).expect("should convert ProxyDestination to bytes");
 
     let mut stream = sdn_requester.open_stream(dest_node, meta).await?;
+    histogram!(METRICS_TUNNEL_CLUSTER_HISTOGRAM).record(started.elapsed().as_millis() as f32 / 1000.0);
 
     log::info!("[ProxyLocal] proxy over {dest_node} ...");
-    let res = copy_bidirectional(&mut proxy, &mut stream).await?;
-    log::info!("[ProxyCluster] proxy over {dest_node} done with res {res:?}");
+    gauge!(METRICS_TUNNEL_CLUSTER_LIVE).increment(1.0);
+    gauge!(METRICS_PROXY_HTTP_LIVE).increment(1.0);
+
+    match copy_bidirectional(&mut proxy, &mut stream).await {
+        Ok(res) => {
+            log::info!("[ProxyLocal] proxy over {dest_node} done with res {res:?}");
+        }
+        Err(e) => {
+            log::error!("[ProxyLocal] proxy over {dest_node} error {e}");
+        }
+    }
+
+    gauge!(METRICS_PROXY_HTTP_LIVE).decrement(1.0);
+    gauge!(METRICS_TUNNEL_CLUSTER_LIVE).decrement(1.0);
     Ok(())
 }
