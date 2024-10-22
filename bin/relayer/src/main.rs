@@ -97,7 +97,7 @@ async fn main() {
     };
     let validator = ClusterValidatorImpl::new(args.root_domain);
     let mut relayer = QuicRelayer::new(cfg, validator).await.expect("should create relayer");
-    while let Ok(_) = relayer.recv().await {}
+    while relayer.recv().await.is_ok() {}
 }
 
 struct DummyTunnelHandle;

@@ -121,7 +121,7 @@ where
 
         let mut sdn_alias = AliasService::new(sdn.create_service(ALIAS_SERVICE.into()));
         let sdn_alias_requester = sdn_alias.requester();
-        tokio::spawn(async move { while let Ok(_) = sdn_alias.recv().await {} });
+        tokio::spawn(async move { while sdn_alias.recv().await.is_ok() {} });
         let sdn_proxy_service = sdn.create_service(PROXY_TO_AGENT_SERVICE.into());
         let sdn_tunnel_service = sdn.create_service(TUNNEL_TO_CLUSTER_SERVICE.into());
         let tunnel_service_ctx = TunnelServiceCtx {
