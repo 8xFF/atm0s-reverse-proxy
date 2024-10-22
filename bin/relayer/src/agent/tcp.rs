@@ -47,7 +47,7 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
                     let (stream, remote) = incoming?;
                     tokio::spawn(run_connection(self.validate.clone(), stream, remote, self.internal_tx.clone()));
                 },
-                event = self.internal_rx.recv() => break Ok(event.expect("should work")),
+                event = self.internal_rx.recv() => break Ok(event.expect("should receive event from internal channel")),
             }
         }
     }
@@ -70,7 +70,7 @@ async fn run_connection<VALIDATE: ClusterValidator<REQ>, REQ>(
 
     let req = validate.validate_connect_req(&buf[0..buf_len])?;
     let domain = validate.generate_domain(&req)?;
-    let agent_id = AgentId::from_domain(&domain);
+    let agent_id = AgentId::try_from_domain(&domain)?;
     let session_id = AgentSessionId::rand();
 
     log::info!("[AgentTcp] new connection validated with domain {domain} agent_id: {agent_id}, session uuid: {session_id}");

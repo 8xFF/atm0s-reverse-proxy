@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use anyhow::anyhow;
 use derive_more::derive::{Deref, From};
 use serde::{Deserialize, Serialize};
 
@@ -13,8 +14,9 @@ impl Display for AgentId {
 }
 
 impl AgentId {
-    pub fn from_domain(domain: &str) -> Self {
-        Self(u64::from_be_bytes(domain.as_bytes()[0..8].try_into().expect("should convert to u64")))
+    pub fn try_from_domain(domain: &str) -> anyhow::Result<Self> {
+        let (first, _) = domain.as_bytes().split_at_checked(8).ok_or(anyhow!("domain should be at least 8 bytes"))?;
+        Ok(Self(u64::from_be_bytes(first.try_into()?)))
     }
 }
 
@@ -26,7 +28,7 @@ pub struct ProxyDestination {
 }
 
 impl ProxyDestination {
-    pub fn agent_id(&self) -> AgentId {
-        AgentId::from_domain(&self.domain)
+    pub fn agent_id(&self) -> anyhow::Result<AgentId> {
+        AgentId::try_from_domain(&self.domain)
     }
 }

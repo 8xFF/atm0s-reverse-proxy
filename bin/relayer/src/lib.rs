@@ -151,7 +151,13 @@ where
     }
 
     fn process_proxy<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(&mut self, proxy: T, dest: ProxyDestination, allow_tunnel_cluster: bool) {
-        let agent_id = dest.agent_id();
+        let agent_id = match dest.agent_id() {
+            Ok(agent_id) => agent_id,
+            Err(e) => {
+                log::warn!("[QuicRelayer] proxy to {dest:?} failed to get agent id: {e}");
+                return;
+            }
+        };
         if let Some(sessions) = self.agent_tcp_sessions.get(&agent_id) {
             let session = sessions.values().next().expect("should have session");
             tokio::spawn(proxy_local_to_agent(proxy, dest, session.clone()));
@@ -313,7 +319,7 @@ async fn proxy_to_cluster<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'sta
     alias_requeser: AliasServiceRequester,
     sdn_requester: P2pServiceRequester,
 ) -> anyhow::Result<()> {
-    let agent_id = dest.agent_id();
+    let agent_id = dest.agent_id()?;
     log::info!("[ProxyCluster] finding location of agent {agent_id}");
     let found_location = alias_requeser.find(*agent_id).await.ok_or(anyhow!("ALIAS_NOT_FOUND"))?;
     let dest_node = match found_location {
