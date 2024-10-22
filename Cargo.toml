@@ -9,8 +9,8 @@ members = [
 
 [workspace.dependencies]
 p2p = { package = "atm0s-small-p2p", git = "https://github.com/marverlous811/atm0s-small-p2p", rev = "cf2b2d4f464aa9940569bfb39e4d9e2ccf1e1556" }
-protocol = { path = "crates/protocol", package = "atm0s-reverse-proxy-protocol", version = "0.2.1" }
-protocol-ed25519 = { path = "crates/protocol_ed25519", package = "atm0s-reverse-proxy-protocol-ed25519", version = "0.1.3" }
+protocol = { path = "crates/protocol", package = "atm0s-reverse-proxy-protocol", version = "0.3.0" }
+protocol-ed25519 = { path = "crates/protocol_ed25519", package = "atm0s-reverse-proxy-protocol-ed25519", version = "0.1.4" }
 
 log = "0.4"
 tokio-yamux = "0.3"
