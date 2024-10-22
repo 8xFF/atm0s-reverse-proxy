@@ -19,7 +19,7 @@ pub enum QuicTlsError {
 
 pub fn configure_client(server_certs: &[CertificateDer], allow_quic_insecure: bool) -> Result<ClientConfig, QuicTlsError> {
     let mut config = if allow_quic_insecure {
-        let provider = rustls::crypto::CryptoProvider::get_default().unwrap();
+        let provider = rustls::crypto::CryptoProvider::get_default().expect("Should get crypto provider");
         ClientConfig::new(Arc::new(QuicClientConfig::try_from(
             rustls::ClientConfig::builder()
                 .dangerous()

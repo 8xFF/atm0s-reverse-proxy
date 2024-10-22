@@ -85,6 +85,6 @@ impl<S: AsyncRead + AsyncWrite + Send + Sync + 'static> AgentSession<S> {
     pub async fn create_stream(&self) -> anyhow::Result<S> {
         let (tx, rx) = oneshot::channel();
         self.control_tx.send(AgentSessionControl::CreateStream(tx)).await?;
-        Ok(rx.await??)
+        rx.await?
     }
 }

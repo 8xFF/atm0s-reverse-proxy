@@ -72,7 +72,7 @@ async fn run_connection<VALIDATE: ClusterValidator<REQ>, REQ>(validate: Arc<VALI
 
     let req = validate.validate_connect_req(&buf[0..buf_len])?;
     let domain = validate.generate_domain(&req)?;
-    let agent_id = AgentId::from_domain(&domain);
+    let agent_id = AgentId::try_from_domain(&domain)?;
     let session_id = AgentSessionId::rand();
 
     log::info!("[AgentQuic] new connection validated with domain {domain} agent_id: {agent_id}, session uuid: {session_id}");

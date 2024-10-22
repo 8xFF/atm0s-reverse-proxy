@@ -26,7 +26,7 @@ impl<RES: DeserializeOwned> QuicConnection<RES> {
         log::info!("connecting to server {}:{}", url_host, url_port);
         let remote = (url_host, url_port).to_socket_addrs()?.next().ok_or(anyhow!("DnsError"))?;
 
-        let mut endpoint = Endpoint::client("0.0.0.0:0".parse().expect(""))?;
+        let mut endpoint = Endpoint::client("0.0.0.0:0".parse().expect("Should parse local addr"))?;
         endpoint.set_default_client_config(configure_client(server_certs, allow_quic_insecure)?);
 
         // connect to server

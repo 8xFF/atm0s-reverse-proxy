@@ -43,11 +43,11 @@ impl<Detector: ProxyDestinationDetector> ProxyTcpListener<Detector> {
                     tokio::spawn(async move {
                         match detector.determine(&mut stream).await {
                             Ok(destination) => {
-                                log::info!("[ProxyTcpListener] determine destionation {}, service {:?} for remote {remote}", destination.domain, destination.service);
+                                log::info!("[ProxyTcpListener] determine destination {}, service {:?} for remote {remote}", destination.domain, destination.service);
                                 tx.send((destination, stream)).await.expect("tcp listener channel should work");
                             },
                             Err(err) => {
-                                log::info!("[ProxyTcpListener] determine destionation for {remote} error {err}");
+                                log::info!("[ProxyTcpListener] determine destination for {remote} error {err}");
                             },
                         }
                     });
