@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-reverse-proxy-relayer"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 description = "Server for atm0s-reverse proxy cluster"
 license = "MIT"
