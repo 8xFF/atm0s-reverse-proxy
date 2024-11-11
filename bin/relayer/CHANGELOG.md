@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-relayer-v0.4.1...atm0s-reverse-proxy-relayer-v0.4.2) - 2024-11-11
+
+### Other
+
+- update p2p lib for fixing alias issue ([#79](https://github.com/8xFF/atm0s-reverse-proxy/pull/79))
+
 ## [0.4.1](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-relayer-v0.4.0...atm0s-reverse-proxy-relayer-v0.4.1) - 2024-11-07
 
 ### Fixed
