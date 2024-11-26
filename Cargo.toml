@@ -8,7 +8,7 @@ members = [
 ]
 
 [workspace.dependencies]
-p2p = { package = "atm0s-small-p2p", version = "0.2.0" }
+p2p = { package = "atm0s-small-p2p", version = "0.2.1" }
 protocol = { path = "crates/protocol", package = "atm0s-reverse-proxy-protocol", version = "0.3.0" }
 protocol-ed25519 = { path = "crates/protocol_ed25519", package = "atm0s-reverse-proxy-protocol-ed25519", version = "0.1.4" }
 
