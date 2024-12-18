@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-relayer-v0.4.3...atm0s-reverse-proxy-relayer-v0.4.4) - 2024-12-18
+
+### Other
+
+- update Cargo.toml dependencies
+
 ## [0.4.3](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-relayer-v0.4.2...atm0s-reverse-proxy-relayer-v0.4.3) - 2024-11-26
 
 ### Other
