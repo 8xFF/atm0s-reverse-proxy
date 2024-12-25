@@ -13,19 +13,27 @@ protocol-ed25519 = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["full"] }
 futures = { version = "0.3" }
 async-trait = { workspace = true }
-clap = { workspace = true, features = ["derive", "env"] }
 log = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter", "std"], optional = true }
-tokio-yamux = { workspace = true }
 bincode = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-quinn = { workspace = true, features = ["ring", "runtime-tokio", "futures-io"] }
-rustls = { workspace = true, features = ["ring", "std"] }
 url = { workspace = true }
-base64 = { workspace = true }
-thiserror = { workspace = true }
 anyhow = { workspace = true }
+thiserror = { workspace = true, optional = true }
+
+# for binary build
+tracing-subscriber = { workspace = true, features = ["env-filter", "std"], optional = true }
+clap = { workspace = true, features = ["derive", "env"], optional = true }
+
+# for tcp protocol
+tokio-yamux = { workspace = true, optional = true }
+
+# for quic protocol
+quinn = { workspace = true, features = ["ring", "runtime-tokio", "futures-io"], optional = true }
+rustls = { workspace = true, features = ["ring", "std"], optional = true }
+base64 = { workspace = true, optional = true }
 
 [features]
-default = ["binary"]
-binary = ["protocol-ed25519", "tracing-subscriber"]
+default = ["binary", "tcp", "quic"]
+binary = ["protocol-ed25519", "tracing-subscriber", "clap"]
+tcp = ["tokio-yamux"]
+quic = ["quinn", "rustls", "base64", "thiserror"]

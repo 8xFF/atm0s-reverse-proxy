@@ -4,11 +4,18 @@ use std::{
     time::{Duration, Instant},
 };
 
-use atm0s_reverse_proxy_agent::{run_tunnel_connection, Connection, Protocol, QuicConnection, ServiceRegistry, SimpleServiceRegistry, SubConnection, TcpConnection};
+#[cfg(feature = "quic")]
+use atm0s_reverse_proxy_agent::QuicConnection;
+#[cfg(feature = "tcp")]
+use atm0s_reverse_proxy_agent::TcpConnection;
+use atm0s_reverse_proxy_agent::{run_tunnel_connection, Connection, Protocol, ServiceRegistry, SimpleServiceRegistry, SubConnection};
+#[cfg(feature = "quic")]
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 use clap::Parser;
+#[cfg(feature = "quic")]
 use protocol::DEFAULT_TUNNEL_CERT;
 use protocol_ed25519::AgentLocalKey;
+#[cfg(feature = "quic")]
 use rustls::pki_types::CertificateDer;
 use tokio::time::sleep;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -54,6 +61,8 @@ struct Args {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
+
+    #[cfg(feature = "quic")]
     rustls::crypto::ring::default_provider().install_default().expect("should install ring as default");
 
     //if RUST_LOG env is not set, set it to info
@@ -83,8 +92,10 @@ async fn main() {
 }
 
 async fn connect(client: usize, args: Args, registry: Arc<dyn ServiceRegistry>) {
+    #[cfg(feature = "quic")]
     let default_tunnel_cert = CertificateDer::from(DEFAULT_TUNNEL_CERT.to_vec());
 
+    #[cfg(feature = "quic")]
     let server_certs = if let Some(cert) = args.custom_quic_cert_base64 {
         vec![CertificateDer::from(URL_SAFE.decode(&cert).expect("Custom cert should in base64 format").to_vec())]
     } else {
@@ -96,6 +107,7 @@ async fn connect(client: usize, args: Args, registry: Arc<dyn ServiceRegistry>) 
         log::info!("Connecting to connector... {:?} addr: {}", args.connector_protocol, args.connector_addr);
         let started = Instant::now();
         match args.connector_protocol {
+            #[cfg(feature = "tcp")]
             Protocol::Tcp => match TcpConnection::new(args.connector_addr.clone(), &agent_signer).await {
                 Ok(conn) => {
                     log::info!("Connected to connector via tcp with res {:?}", conn.response());
@@ -106,6 +118,7 @@ async fn connect(client: usize, args: Args, registry: Arc<dyn ServiceRegistry>) 
                     log::error!("Connect to connector via tcp error: {e}");
                 }
             },
+            #[cfg(feature = "quic")]
             Protocol::Quic => match QuicConnection::new(args.connector_addr.clone(), &agent_signer, &server_certs, args.allow_quic_insecure).await {
                 Ok(conn) => {
                     log::info!("Connected to connector via quic with res {:?}", conn.response());

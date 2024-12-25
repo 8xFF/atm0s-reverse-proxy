@@ -1,10 +1,19 @@
 use std::{alloc::System, net::SocketAddr, sync::Arc};
 
-use atm0s_reverse_proxy_agent::{run_tunnel_connection, Connection, Protocol, QuicConnection, ServiceRegistry, SimpleServiceRegistry, SubConnection, TcpConnection};
+#[cfg(feature = "quic")]
+use atm0s_reverse_proxy_agent::QuicConnection;
+#[cfg(feature = "tcp")]
+use atm0s_reverse_proxy_agent::TcpConnection;
+use atm0s_reverse_proxy_agent::{run_tunnel_connection, Connection, Protocol, ServiceRegistry, SimpleServiceRegistry, SubConnection};
+#[cfg(feature = "quic")]
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
+
 use clap::Parser;
-use protocol::{services::SERVICE_RTSP, DEFAULT_TUNNEL_CERT};
+use protocol::services::SERVICE_RTSP;
+#[cfg(feature = "quic")]
+use protocol::DEFAULT_TUNNEL_CERT;
 use protocol_ed25519::AgentLocalKey;
+#[cfg(feature = "quic")]
 use rustls::pki_types::CertificateDer;
 use tokio::time::sleep;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -57,20 +66,21 @@ struct Args {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
+    //if RUST_LOG env is not set, set it to info
+    if std::env::var("RUST_LOG").is_err() {
+        std::env::set_var("RUST_LOG", "info");
+    }
+    tracing_subscriber::registry().with(fmt::layer()).with(EnvFilter::from_default_env()).init();
 
+    #[cfg(feature = "quic")]
     let server_certs = if let Some(cert) = args.custom_quic_cert_base64 {
         vec![CertificateDer::from(URL_SAFE.decode(cert).expect("Custom cert should in base64 format").to_vec())]
     } else {
         vec![CertificateDer::from(DEFAULT_TUNNEL_CERT.to_vec())]
     };
 
+    #[cfg(feature = "quic")]
     rustls::crypto::ring::default_provider().install_default().expect("should install ring as default");
-
-    //if RUST_LOG env is not set, set it to info
-    if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "info");
-    }
-    tracing_subscriber::registry().with(fmt::layer()).with(EnvFilter::from_default_env()).init();
 
     //read local_key from file first, if not exist, create a new one and save to file
     let agent_signer = match std::fs::read_to_string(&args.local_key) {
@@ -110,6 +120,7 @@ async fn main() {
     loop {
         log::info!("Connecting to connector... {:?} addr: {}", args.connector_protocol, args.connector_addr);
         match args.connector_protocol {
+            #[cfg(feature = "tcp")]
             Protocol::Tcp => match TcpConnection::new(args.connector_addr.clone(), &agent_signer).await {
                 Ok(conn) => {
                     log::info!("Connected to connector via tcp with res {:?}", conn.response());
@@ -119,6 +130,7 @@ async fn main() {
                     log::error!("Connect to connector via tcp error: {e}");
                 }
             },
+            #[cfg(feature = "quic")]
             Protocol::Quic => match QuicConnection::new(args.connector_addr.clone(), &agent_signer, &server_certs, args.allow_quic_insecure).await {
                 Ok(conn) => {
                     log::info!("Connected to connector via quic with res {:?}", conn.response());

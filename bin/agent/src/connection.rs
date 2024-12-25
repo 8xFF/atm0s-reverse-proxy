@@ -2,16 +2,21 @@
 
 use std::fmt::Debug;
 
-use clap::ValueEnum;
 use protocol::stream::TunnelStream;
 use tokio::io::{AsyncRead, AsyncWrite};
 
+#[cfg(feature = "quic")]
 pub mod quic;
+
+#[cfg(feature = "tcp")]
 pub mod tcp;
 
-#[derive(ValueEnum, Debug, Clone)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 pub enum Protocol {
+    #[cfg(feature = "tcp")]
     Tcp,
+    #[cfg(feature = "quic")]
     Quic,
 }
 

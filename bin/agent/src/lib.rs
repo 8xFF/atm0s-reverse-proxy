@@ -4,12 +4,12 @@ use protocol::cluster::{wait_object, AgentTunnelRequest};
 
 mod connection;
 mod local_tunnel;
+#[cfg(feature = "quic")]
+pub use connection::quic::{QuicConnection, QuicSubConnection};
+#[cfg(feature = "tcp")]
+pub use connection::tcp::{TcpConnection, TcpSubConnection};
 
-pub use connection::{
-    quic::{QuicConnection, QuicSubConnection},
-    tcp::{TcpConnection, TcpSubConnection},
-    Connection, Protocol, SubConnection,
-};
+pub use connection::{Connection, Protocol, SubConnection};
 pub use local_tunnel::{registry::SimpleServiceRegistry, LocalTunnel, ServiceRegistry};
 use tokio::{io::copy_bidirectional, net::TcpStream};
 
