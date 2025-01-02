@@ -21,8 +21,8 @@ anyhow = { workspace = true }
 thiserror = { workspace = true, optional = true }
 
 # for binary build
-tracing-subscriber = { workspace = true, features = ["env-filter", "std"], optional = true }
-clap = { workspace = true, features = ["derive", "env"], optional = true }
+picolog = { workspace = true, optional = true }
+argh = { workspace = true, optional = true }
 
 # for tcp protocol
 tokio-yamux = { workspace = true, optional = true }
@@ -33,7 +33,7 @@ rustls = { workspace = true, features = ["ring", "std"], optional = true }
 base64 = { workspace = true, optional = true }
 
 [features]
-default = ["binary", "tcp", "quic"]
-binary = ["protocol-ed25519", "tracing-subscriber", "clap"]
+default = ["binary", "tcp"]
+binary = ["protocol-ed25519", "argh", "picolog"]
 tcp = ["tokio-yamux"]
 quic = ["quinn", "rustls", "base64", "thiserror"]

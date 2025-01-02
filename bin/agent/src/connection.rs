@@ -1,6 +1,6 @@
 //! Tunnel is a trait that defines the interface for a tunnel which connect to connector port of relayer.
 
-use std::fmt::Debug;
+use std::{fmt::Debug, str::FromStr};
 
 use protocol::stream::TunnelStream;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -12,12 +12,24 @@ pub mod quic;
 pub mod tcp;
 
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 pub enum Protocol {
     #[cfg(feature = "tcp")]
     Tcp,
     #[cfg(feature = "quic")]
     Quic,
+}
+
+impl FromStr for Protocol {
+    type Err = &'static str;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            #[cfg(feature = "tcp")]
+            "tcp" | "TCP" => Ok(Protocol::Tcp),
+            #[cfg(feature = "quic")]
+            "quic" | "QUIC" => Ok(Protocol::Quic),
+            _ => Err("invalid protocol"),
+        }
+    }
 }
 
 pub trait SubConnection: AsyncRead + AsyncWrite + Unpin + Send + Sync {}

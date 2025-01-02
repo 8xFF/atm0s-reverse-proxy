@@ -1,9 +1,11 @@
+use std::str::FromStr;
 use std::{
     net::SocketAddr,
     sync::Arc,
     time::{Duration, Instant},
 };
 
+use argh::FromArgs;
 #[cfg(feature = "quic")]
 use atm0s_reverse_proxy_agent::QuicConnection;
 #[cfg(feature = "tcp")]
@@ -11,68 +13,67 @@ use atm0s_reverse_proxy_agent::TcpConnection;
 use atm0s_reverse_proxy_agent::{run_tunnel_connection, Connection, Protocol, ServiceRegistry, SimpleServiceRegistry, SubConnection};
 #[cfg(feature = "quic")]
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
-use clap::Parser;
+use log::LevelFilter;
+use picolog::PicoLogger;
 #[cfg(feature = "quic")]
 use protocol::DEFAULT_TUNNEL_CERT;
 use protocol_ed25519::AgentLocalKey;
 #[cfg(feature = "quic")]
 use rustls::pki_types::CertificateDer;
 use tokio::time::sleep;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use url::Url;
 
 /// A benchmark util for simulating multiple clients connect to relay server
-#[derive(Parser, Debug, Clone)]
-#[command(author, version, about, long_about = None)]
+#[derive(FromArgs, Debug, Clone)]
 struct Args {
-    /// Address of relay server
-    #[arg(env, long)]
+    /// address of relay server
+    #[argh(option)]
     connector_addr: Url,
 
-    /// Protocol of relay server
-    #[arg(env, long)]
+    /// protocol of relay server
+    #[argh(option)]
     connector_protocol: Protocol,
 
-    /// Http proxy dest
-    #[arg(env, long, default_value = "127.0.0.1:8080")]
+    /// http proxy dest
+    #[argh(option, default = "SocketAddr::from_str(\"127.0.0.1:8080\").unwrap()")]
     http_dest: SocketAddr,
 
-    /// Sni-https proxy dest
-    #[arg(env, long, default_value = "127.0.0.1:8443")]
+    /// sni-https proxy dest
+    #[argh(option, default = "SocketAddr::from_str(\"127.0.0.1:8443\").unwrap()")]
     https_dest: SocketAddr,
 
-    /// Custom quic server cert in base64
-    #[arg(env, long)]
+    #[cfg(feature = "quic")]
+    /// custom quic server cert in base64
+    #[argh(option)]
     custom_quic_cert_base64: Option<String>,
 
-    /// Allow connect in insecure mode
-    #[arg(env, long)]
+    #[cfg(feature = "quic")]
+    /// allow connect in insecure mode
+    #[argh(option)]
     allow_quic_insecure: bool,
 
     /// clients
-    #[arg(env, long)]
+    #[argh(option)]
     clients: usize,
 
     /// wait time between connect action
-    #[arg(env, long, default_value_t = 1000)]
+    #[argh(option, default = "1000")]
     connect_wait_ms: u64,
 }
 
 #[tokio::main]
 async fn main() {
-    let args = Args::parse();
+    let args: Args = argh::from_env();
 
     #[cfg(feature = "quic")]
     rustls::crypto::ring::default_provider().install_default().expect("should install ring as default");
 
     //if RUST_LOG env is not set, set it to info
-    if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "warn");
-    }
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
-        .with(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
+    let level = match std::env::var("RUST_LOG") {
+        Ok(v) => LevelFilter::from_str(&v).unwrap_or(LevelFilter::Info),
+        _ => LevelFilter::Info,
+    };
+    PicoLogger::new(level).init();
 
     let registry = SimpleServiceRegistry::new(args.http_dest, args.https_dest);
     let registry = Arc::new(registry);
