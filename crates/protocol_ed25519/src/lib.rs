@@ -2,7 +2,7 @@ use ed25519_dalek::pkcs8::spki::der::pem::LineEnding;
 use ed25519_dalek::pkcs8::{DecodePrivateKey, EncodePrivateKey};
 use ed25519_dalek::SigningKey;
 use ed25519_dalek::{Signer, Verifier};
-use protocol::key::{AgentSigner, ClusterValidator};
+use protocol::key::{AgentSigner, ClusterRequest, ClusterValidator};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 
@@ -10,6 +10,14 @@ use serde::{Deserialize, Serialize};
 pub struct RegisterRequest {
     pub pub_key: ed25519_dalek::VerifyingKey,
     pub signature: ed25519_dalek::Signature,
+}
+
+impl ClusterRequest for RegisterRequest {
+    type Context = Vec<u8>;
+
+    fn context(&self) -> Self::Context {
+        self.pub_key.to_bytes().to_vec()
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]

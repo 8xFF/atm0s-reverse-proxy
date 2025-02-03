@@ -102,10 +102,17 @@ async fn main() {
 
 struct DummyTunnelHandle;
 
-impl TunnelServiceHandle for DummyTunnelHandle {
+impl TunnelServiceHandle<Vec<u8>> for DummyTunnelHandle {
     fn start(&mut self, _ctx: &atm0s_reverse_proxy_relayer::TunnelServiceCtx) {}
 
-    fn on_agent_conn<S: tokio::io::AsyncRead + tokio::io::AsyncWrite>(&mut self, _ctx: &atm0s_reverse_proxy_relayer::TunnelServiceCtx, _agent_id: protocol::proxy::AgentId, _stream: S) {}
+    fn on_agent_conn<S: tokio::io::AsyncRead + tokio::io::AsyncWrite>(
+        &mut self,
+        _ctx: &atm0s_reverse_proxy_relayer::TunnelServiceCtx,
+        _agent_id: protocol::proxy::AgentId,
+        _metadata: Vec<u8>,
+        _stream: S,
+    ) {
+    }
 
     fn on_cluster_event(&mut self, _ctx: &atm0s_reverse_proxy_relayer::TunnelServiceCtx, _event: p2p::P2pServiceEvent) {}
 }
