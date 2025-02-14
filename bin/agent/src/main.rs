@@ -1,76 +1,92 @@
+use std::str::FromStr;
 use std::{alloc::System, net::SocketAddr, sync::Arc};
 
-use atm0s_reverse_proxy_agent::{run_tunnel_connection, Connection, Protocol, QuicConnection, ServiceRegistry, SimpleServiceRegistry, SubConnection, TcpConnection};
+use log::LevelFilter;
+use picolog::PicoLogger;
+
+#[cfg(feature = "quic")]
+use atm0s_reverse_proxy_agent::QuicConnection;
+#[cfg(feature = "tcp")]
+use atm0s_reverse_proxy_agent::TcpConnection;
+use atm0s_reverse_proxy_agent::{run_tunnel_connection, Connection, Protocol, ServiceRegistry, SimpleServiceRegistry, SubConnection};
+#[cfg(feature = "quic")]
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
-use clap::Parser;
-use protocol::{services::SERVICE_RTSP, DEFAULT_TUNNEL_CERT};
+
+use argh::FromArgs;
+use protocol::services::SERVICE_RTSP;
+#[cfg(feature = "quic")]
+use protocol::DEFAULT_TUNNEL_CERT;
 use protocol_ed25519::AgentLocalKey;
+#[cfg(feature = "quic")]
 use rustls::pki_types::CertificateDer;
 use tokio::time::sleep;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+// use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use url::Url;
 
 #[global_allocator]
 static A: System = System;
 
 /// A HTTP and SNI HTTPs proxy for expose your local service to the internet.
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[derive(FromArgs, Debug)]
 struct Args {
-    /// Address of relay server
-    #[arg(env, long)]
+    /// address of relay server
+    #[argh(option)]
     connector_addr: Url,
 
-    /// Protocol of relay server
-    #[arg(env, long)]
+    /// protocol of relay server
+    #[argh(option)]
     connector_protocol: Protocol,
 
-    /// Http proxy dest
-    #[arg(env, long, default_value = "127.0.0.1:8080")]
+    /// http proxy dest
+    #[argh(option, default = "SocketAddr::from_str(\"127.0.0.1:8080\").unwrap()")]
     http_dest: SocketAddr,
 
-    /// Sni-https proxy dest
-    #[arg(env, long, default_value = "127.0.0.1:8443")]
+    /// sni-https proxy dest
+    #[argh(option, default = "SocketAddr::from_str(\"127.0.0.1:8443\").unwrap()")]
     https_dest: SocketAddr,
 
-    /// Rtsp proxy dest
-    #[arg(env, long, default_value = "127.0.0.1:554")]
+    /// rtsp proxy dest
+    #[argh(option, default = "SocketAddr::from_str(\"127.0.0.1:554\").unwrap()")]
     rtsp_dest: SocketAddr,
 
-    /// Sni-https proxy dest
-    #[arg(env, long, default_value = "127.0.0.1:5443")]
+    /// sni-https proxy dest
+    #[argh(option, default = "SocketAddr::from_str(\"127.0.0.1:5443\").unwrap()")]
     rtsps_dest: SocketAddr,
 
-    /// Persistent local key
-    #[arg(env, long, default_value = "local_key.pem")]
+    /// persistent local key
+    #[argh(option, default = "String::from(\"local_key.pem\")")]
     local_key: String,
 
-    /// Custom quic server cert in base64
-    #[arg(env, long)]
+    #[cfg(feature = "quic")]
+    /// custom quic server cert in base64
+    #[argh(option)]
     custom_quic_cert_base64: Option<String>,
 
-    /// Allow connect in insecure mode
-    #[arg(env, long)]
+    #[cfg(feature = "quic")]
+    /// allow connect in insecure mode
+    #[argh(switch)]
     allow_quic_insecure: bool,
 }
 
 #[tokio::main]
 async fn main() {
-    let args = Args::parse();
+    let args: Args = argh::from_env();
+    //if RUST_LOG env is not set, set it to info
+    let level = match std::env::var("RUST_LOG") {
+        Ok(v) => LevelFilter::from_str(&v).unwrap_or(LevelFilter::Info),
+        _ => LevelFilter::Info,
+    };
+    PicoLogger::new(level).init();
 
+    #[cfg(feature = "quic")]
     let server_certs = if let Some(cert) = args.custom_quic_cert_base64 {
         vec![CertificateDer::from(URL_SAFE.decode(cert).expect("Custom cert should in base64 format").to_vec())]
     } else {
         vec![CertificateDer::from(DEFAULT_TUNNEL_CERT.to_vec())]
     };
 
+    #[cfg(feature = "quic")]
     rustls::crypto::ring::default_provider().install_default().expect("should install ring as default");
-
-    //if RUST_LOG env is not set, set it to info
-    if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "info");
-    }
-    tracing_subscriber::registry().with(fmt::layer()).with(EnvFilter::from_default_env()).init();
 
     //read local_key from file first, if not exist, create a new one and save to file
     let agent_signer = match std::fs::read_to_string(&args.local_key) {
@@ -110,6 +126,7 @@ async fn main() {
     loop {
         log::info!("Connecting to connector... {:?} addr: {}", args.connector_protocol, args.connector_addr);
         match args.connector_protocol {
+            #[cfg(feature = "tcp")]
             Protocol::Tcp => match TcpConnection::new(args.connector_addr.clone(), &agent_signer).await {
                 Ok(conn) => {
                     log::info!("Connected to connector via tcp with res {:?}", conn.response());
@@ -119,6 +136,7 @@ async fn main() {
                     log::error!("Connect to connector via tcp error: {e}");
                 }
             },
+            #[cfg(feature = "quic")]
             Protocol::Quic => match QuicConnection::new(args.connector_addr.clone(), &agent_signer, &server_certs, args.allow_quic_insecure).await {
                 Ok(conn) => {
                     log::info!("Connected to connector via quic with res {:?}", conn.response());
