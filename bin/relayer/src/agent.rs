@@ -55,14 +55,14 @@ impl<S> Clone for AgentSession<S> {
     }
 }
 
-pub enum AgentListenerEvent<S> {
+pub enum AgentListenerEvent<C, S> {
     Connected(AgentId, AgentSession<S>),
-    IncomingStream(AgentId, S),
+    IncomingStream(AgentId, C, S),
     Disconnected(AgentId, AgentSessionId),
 }
 
-pub trait AgentListener<S: AsyncRead + AsyncWrite> {
-    async fn recv(&mut self) -> anyhow::Result<AgentListenerEvent<S>>;
+pub trait AgentListener<C, S: AsyncRead + AsyncWrite> {
+    async fn recv(&mut self) -> anyhow::Result<AgentListenerEvent<C, S>>;
     async fn shutdown(&mut self);
 }
 

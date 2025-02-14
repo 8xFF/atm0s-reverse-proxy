@@ -2,7 +2,10 @@ use std::{marker::PhantomData, net::SocketAddr, sync::Arc, time::Instant};
 
 use futures::StreamExt;
 use metrics::histogram;
-use protocol::{key::ClusterValidator, proxy::AgentId};
+use protocol::{
+    key::{ClusterRequest, ClusterValidator},
+    proxy::AgentId,
+};
 use serde::de::DeserializeOwned;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -18,15 +21,15 @@ use super::{AgentListener, AgentListenerEvent, AgentSession, AgentSessionId};
 
 pub type TunnelTcpStream = StreamHandle;
 
-pub struct AgentTcpListener<VALIDATE, HANDSHAKE> {
+pub struct AgentTcpListener<VALIDATE, HANDSHAKE: ClusterRequest> {
     validate: Arc<VALIDATE>,
     listener: TcpListener,
-    internal_tx: Sender<AgentListenerEvent<TunnelTcpStream>>,
-    internal_rx: Receiver<AgentListenerEvent<TunnelTcpStream>>,
+    internal_tx: Sender<AgentListenerEvent<HANDSHAKE::Context, TunnelTcpStream>>,
+    internal_rx: Receiver<AgentListenerEvent<HANDSHAKE::Context, TunnelTcpStream>>,
     _tmp: PhantomData<HANDSHAKE>,
 }
 
-impl<VALIDATE, HANDSHAKE> AgentTcpListener<VALIDATE, HANDSHAKE> {
+impl<VALIDATE, HANDSHAKE: ClusterRequest> AgentTcpListener<VALIDATE, HANDSHAKE> {
     pub async fn new(addr: SocketAddr, validate: VALIDATE) -> anyhow::Result<Self> {
         let (internal_tx, internal_rx) = channel(10);
 
@@ -40,8 +43,8 @@ impl<VALIDATE, HANDSHAKE> AgentTcpListener<VALIDATE, HANDSHAKE> {
     }
 }
 
-impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'static> AgentListener<TunnelTcpStream> for AgentTcpListener<VALIDATE, REQ> {
-    async fn recv(&mut self) -> anyhow::Result<AgentListenerEvent<TunnelTcpStream>> {
+impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'static + ClusterRequest> AgentListener<REQ::Context, TunnelTcpStream> for AgentTcpListener<VALIDATE, REQ> {
+    async fn recv(&mut self) -> anyhow::Result<AgentListenerEvent<REQ::Context, TunnelTcpStream>> {
         loop {
             select! {
                 incoming = self.listener.accept() => {
@@ -56,11 +59,11 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
     async fn shutdown(&mut self) {}
 }
 
-async fn run_connection<VALIDATE: ClusterValidator<REQ>, REQ>(
+async fn run_connection<VALIDATE: ClusterValidator<REQ>, REQ: ClusterRequest>(
     validate: Arc<VALIDATE>,
     mut in_stream: TcpStream,
     remote: SocketAddr,
-    internal_tx: Sender<AgentListenerEvent<TunnelTcpStream>>,
+    internal_tx: Sender<AgentListenerEvent<REQ::Context, TunnelTcpStream>>,
 ) -> anyhow::Result<()> {
     let started = Instant::now();
     log::info!("[AgentTcp] new connection from {}", remote);
@@ -74,6 +77,7 @@ async fn run_connection<VALIDATE: ClusterValidator<REQ>, REQ>(
     let domain = validate.generate_domain(&req)?;
     let agent_id = AgentId::try_from_domain(&domain)?;
     let session_id = AgentSessionId::rand();
+    let agent_ctx = req.context();
 
     log::info!("[AgentTcp] new connection validated with domain {domain} agent_id: {agent_id}, session uuid: {session_id}");
 
@@ -118,8 +122,9 @@ async fn run_connection<VALIDATE: ClusterValidator<REQ>, REQ>(
             accept = session.next() => match accept {
                 Some(Ok(stream)) => {
                     let internal_tx = internal_tx.clone();
+                    let agent_ctx = agent_ctx.clone();
                     tokio::spawn(async move {
-                        internal_tx.send(AgentListenerEvent::IncomingStream(agent_id, stream)).await.expect("should send to main loop");
+                        internal_tx.send(AgentListenerEvent::IncomingStream(agent_id, agent_ctx, stream)).await.expect("should send to main loop");
                     });
                 },
                 Some(Err(err)) => {

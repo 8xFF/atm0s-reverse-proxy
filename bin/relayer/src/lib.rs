@@ -13,7 +13,7 @@ use p2p::{
 };
 use protocol::{
     cluster::{write_object, AgentTunnelRequest},
-    key::ClusterValidator,
+    key::{ClusterRequest, ClusterValidator},
     proxy::{AgentId, ProxyDestination},
 };
 use quic::TunnelQuicStream;
@@ -45,9 +45,9 @@ pub struct TunnelServiceCtx {
 }
 
 /// This service take care how we process a incoming request from agent
-pub trait TunnelServiceHandle {
+pub trait TunnelServiceHandle<Ctx> {
     fn start(&mut self, _ctx: &TunnelServiceCtx);
-    fn on_agent_conn<S: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(&mut self, _ctx: &TunnelServiceCtx, _agent_id: AgentId, _stream: S);
+    fn on_agent_conn<S: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(&mut self, _ctx: &TunnelServiceCtx, _agent_id: AgentId, ctx: Ctx, _stream: S);
     fn on_cluster_event(&mut self, _ctx: &TunnelServiceCtx, _event: P2pServiceEvent);
 }
 
@@ -78,7 +78,7 @@ pub enum QuicRelayerEvent {
     Continue,
 }
 
-pub struct QuicRelayer<SECURE, VALIDATE, REQ, TSH> {
+pub struct QuicRelayer<SECURE, VALIDATE, REQ: ClusterRequest, TSH> {
     agent_quic: AgentQuicListener<VALIDATE, REQ>,
     agent_tcp: AgentTcpListener<VALIDATE, REQ>,
     http_proxy: ProxyTcpListener<HttpDestinationDetector>,
@@ -100,12 +100,12 @@ pub struct QuicRelayer<SECURE, VALIDATE, REQ, TSH> {
     agent_tcp_sessions: HashMap<AgentId, HashMap<AgentSessionId, (AgentSession<TunnelTcpStream>, AliasGuard)>>,
 }
 
-impl<SECURE, VALIDATE, REQ, TSH> QuicRelayer<SECURE, VALIDATE, REQ, TSH>
+impl<SECURE, VALIDATE, REQ: ClusterRequest, TSH> QuicRelayer<SECURE, VALIDATE, REQ, TSH>
 where
     SECURE: HandshakeProtocol,
     VALIDATE: ClusterValidator<REQ>,
     REQ: DeserializeOwned + Send + Sync + 'static,
-    TSH: TunnelServiceHandle + Send + Sync + 'static,
+    TSH: TunnelServiceHandle<REQ::Context> + Send + Sync + 'static,
 {
     pub async fn new(mut cfg: QuicRelayerConfig<SECURE, TSH>, validate: VALIDATE) -> anyhow::Result<Self> {
         let mut sdn = P2pNetwork::new(P2pNetworkConfig {
@@ -237,8 +237,8 @@ where
                     gauge!(METRICS_AGENT_LIVE).increment(1.0);
                     Ok(QuicRelayerEvent::AgentConnected(agent_id, session_id, domain))
                 },
-                AgentListenerEvent::IncomingStream(agent_id, stream) => {
-                    self.tunnel_service_handle.on_agent_conn(&self.tunnel_service_ctx, agent_id, stream);
+                AgentListenerEvent::IncomingStream(agent_id, agent_ctx, stream) => {
+                    self.tunnel_service_handle.on_agent_conn(&self.tunnel_service_ctx, agent_id, agent_ctx, stream);
                     Ok(QuicRelayerEvent::Continue)
                 }
                 AgentListenerEvent::Disconnected(agent_id, session_id) => {
@@ -265,8 +265,8 @@ where
                     gauge!(METRICS_AGENT_LIVE).increment(1.0);
                     Ok(QuicRelayerEvent::AgentConnected(agent_id, session_id, domain))
                 },
-                AgentListenerEvent::IncomingStream(agent_id, stream) => {
-                    self.tunnel_service_handle.on_agent_conn(&self.tunnel_service_ctx, agent_id, stream);
+                AgentListenerEvent::IncomingStream(agent_id, agent_ctx, stream) => {
+                    self.tunnel_service_handle.on_agent_conn(&self.tunnel_service_ctx, agent_id, agent_ctx, stream);
                     Ok(QuicRelayerEvent::Continue)
                 }
                 AgentListenerEvent::Disconnected(agent_id, session_id) => {
