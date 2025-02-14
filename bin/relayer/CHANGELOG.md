@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-relayer-v0.4.4...atm0s-reverse-proxy-relayer-v0.5.0) - 2025-02-14
+
+### Added
+
+- add agent context uses in forward from agent to service (#90)
+
 ## [0.4.4](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-relayer-v0.4.3...atm0s-reverse-proxy-relayer-v0.4.4) - 2024-12-18
 
 ### Other

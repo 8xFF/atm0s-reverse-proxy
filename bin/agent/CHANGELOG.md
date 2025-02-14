@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-agent-v0.2.2...atm0s-reverse-proxy-agent-v0.3.0) - 2025-02-14
+
+### Added
+
+- turn tcp/quic into features in agent, optimize client binary size (#87)
+
 ## [0.2.2](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-agent-v0.2.1...atm0s-reverse-proxy-agent-v0.2.2) - 2024-11-11
 
 ### Other
