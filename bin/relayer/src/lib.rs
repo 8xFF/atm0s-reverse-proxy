@@ -238,7 +238,6 @@ where
                     Ok(QuicRelayerEvent::AgentConnected(agent_id, session_id, domain))
                 },
                 AgentListenerEvent::IncomingStream(agent_id, agent_ctx, stream) => {
-                    log::info!("[TcpRelayer] incoming stream from agent {agent_id} {:?}", agent_ctx);
                     self.tunnel_service_handle.on_agent_conn(&self.tunnel_service_ctx, agent_id, agent_ctx, stream);
                     Ok(QuicRelayerEvent::Continue)
                 }
@@ -267,7 +266,6 @@ where
                     Ok(QuicRelayerEvent::AgentConnected(agent_id, session_id, domain))
                 },
                 AgentListenerEvent::IncomingStream(agent_id, agent_ctx, stream) => {
-                    log::info!("[QuicRelayer] incoming stream from agent {agent_id} {:?}", agent_ctx);
                     self.tunnel_service_handle.on_agent_conn(&self.tunnel_service_ctx, agent_id, agent_ctx, stream);
                     Ok(QuicRelayerEvent::Continue)
                 }
