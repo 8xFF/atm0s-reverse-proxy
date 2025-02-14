@@ -1,6 +1,6 @@
 [package]
 name = "atm0s-reverse-proxy-protocol-ed25519"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 description = "Protocol implement with Ed25519 for atm0s-reverse proxy cluster"
 license = "MIT"
