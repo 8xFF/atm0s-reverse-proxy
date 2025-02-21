@@ -1,4 +1,4 @@
-FROM ubuntu:22.04 as base
+FROM ubuntu:24.04 as base
 ARG TARGETPLATFORM
 COPY . /tmp
 WORKDIR /tmp
@@ -16,7 +16,7 @@ RUN case $TARGETPLATFORM in \
     chmod +x /agent; \
     chmod +x /relayer;
 
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 COPY --from=base /relayer /relayer
 COPY --from=base /agent /agent
