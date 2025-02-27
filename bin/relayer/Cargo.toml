@@ -30,6 +30,7 @@ bincode = { workspace = true }
 poem = { workspace = true, optional = true }
 metrics = { workspace = true }
 tokio-yamux = { workspace = true }
+tokio-rustls = { workspace = true }
 
 [dev-dependencies]
 test-log = { workspace = true }

@@ -19,6 +19,7 @@ serde = { workspace = true, features = ["derive"] }
 url = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true, optional = true }
+tokio-native-tls = { workspace = true, optional = true } 
 
 # for binary build
 picolog = { workspace = true, optional = true }
@@ -35,5 +36,5 @@ base64 = { workspace = true, optional = true }
 [features]
 default = ["binary", "tcp"]
 binary = ["protocol-ed25519", "argh", "picolog"]
-tcp = ["tokio-yamux"]
+tcp = ["tokio-yamux", "tokio-native-tls"]
 quic = ["quinn", "rustls", "base64", "thiserror"]
