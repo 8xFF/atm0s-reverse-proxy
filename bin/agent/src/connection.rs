@@ -11,6 +11,9 @@ pub mod quic;
 #[cfg(feature = "tcp")]
 pub mod tcp;
 
+#[cfg(feature = "tcp")]
+pub mod tls;
+
 #[derive(Debug, Clone)]
 pub enum Protocol {
     #[cfg(feature = "tcp")]

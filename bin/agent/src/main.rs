@@ -7,19 +7,20 @@ use picolog::PicoLogger;
 #[cfg(feature = "quic")]
 use atm0s_reverse_proxy_agent::QuicConnection;
 #[cfg(feature = "tcp")]
-use atm0s_reverse_proxy_agent::TcpConnection;
+use atm0s_reverse_proxy_agent::TlsConnection;
 use atm0s_reverse_proxy_agent::{run_tunnel_connection, Connection, Protocol, ServiceRegistry, SimpleServiceRegistry, SubConnection};
 #[cfg(feature = "quic")]
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 
 use argh::FromArgs;
 use protocol::services::SERVICE_RTSP;
-#[cfg(feature = "quic")]
+// #[cfg(feature = "quic")]
 use protocol::DEFAULT_TUNNEL_CERT;
 use protocol_ed25519::AgentLocalKey;
 #[cfg(feature = "quic")]
 use rustls::pki_types::CertificateDer;
 use tokio::time::sleep;
+use tokio_native_tls::native_tls::Certificate;
 // use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use url::Url;
 
@@ -85,6 +86,9 @@ async fn main() {
         vec![CertificateDer::from(DEFAULT_TUNNEL_CERT.to_vec())]
     };
 
+    #[cfg(feature = "tcp")]
+    let cert = Certificate::from_der(DEFAULT_TUNNEL_CERT).unwrap();
+
     #[cfg(feature = "quic")]
     rustls::crypto::ring::default_provider().install_default().expect("should install ring as default");
 
@@ -127,7 +131,7 @@ async fn main() {
         log::info!("Connecting to connector... {:?} addr: {}", args.connector_protocol, args.connector_addr);
         match args.connector_protocol {
             #[cfg(feature = "tcp")]
-            Protocol::Tcp => match TcpConnection::new(args.connector_addr.clone(), &agent_signer).await {
+            Protocol::Tcp => match TlsConnection::new(args.connector_addr.clone(), &agent_signer, cert.clone()).await {
                 Ok(conn) => {
                     log::info!("Connected to connector via tcp with res {:?}", conn.response());
                     run_connection_loop(conn, registry.clone()).await;

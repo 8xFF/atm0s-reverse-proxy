@@ -7,4 +7,4 @@ RUST_LOG=info cargo run -- \
     --root-domain local.ha.8xff.io \
     --sdn-peer-id 1 \
     --sdn-listener 127.0.0.1:14001 \
-    --sdn-advertise-address 127.0.0.1:14001 \
+    --sdn-advertise-address 127.0.0.1:14001
