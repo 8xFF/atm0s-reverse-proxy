@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-agent-v0.3.0...atm0s-reverse-proxy-agent-v0.4.0) - 2025-02-28
+
+### Added
+
+- ssl for tcp connection (#92)
+
+### Fixed
+
+- QUIC client should not verify hostname for adapting with multiple nodes (#94)
+
 ## [0.3.0](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-agent-v0.2.2...atm0s-reverse-proxy-agent-v0.3.0) - 2025-02-14
 
 ### Added
