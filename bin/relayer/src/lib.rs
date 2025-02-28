@@ -1,7 +1,12 @@
 use std::{collections::HashMap, net::SocketAddr, time::Instant};
 
 use ::metrics::{counter, gauge, histogram};
-use agent::{quic::AgentQuicListener, tcp::TunnelTcpStream, tls::AgentTlsListener, AgentListener, AgentListenerEvent, AgentSession};
+use agent::{
+    quic::AgentQuicListener,
+    tcp::{AgentTcpListener, TunnelTcpStream},
+    tls::{AgentTlsListener, TunnelTlsStream},
+    AgentListener, AgentListenerEvent, AgentSession,
+};
 use anyhow::anyhow;
 use p2p::{
     alias_service::{AliasGuard, AliasService, AliasServiceRequester},
@@ -48,7 +53,8 @@ pub trait TunnelServiceHandle<Ctx> {
 }
 
 pub struct QuicRelayerConfig<SECURE, TSH> {
-    pub agent_listener: SocketAddr,
+    pub agent_unsecure_listener: SocketAddr,
+    pub agent_secure_listener: SocketAddr,
     pub proxy_http_listener: SocketAddr,
     pub proxy_tls_listener: SocketAddr,
     pub proxy_rtsp_listener: SocketAddr,
@@ -76,7 +82,8 @@ pub enum QuicRelayerEvent {
 
 pub struct QuicRelayer<SECURE, VALIDATE, REQ: ClusterRequest, TSH> {
     agent_quic: AgentQuicListener<VALIDATE, REQ>,
-    agent_tcp: AgentTlsListener<VALIDATE, REQ>,
+    agent_tcp: AgentTcpListener<VALIDATE, REQ>,
+    agent_tls: AgentTlsListener<VALIDATE, REQ>,
     http_proxy: ProxyTcpListener<HttpDestinationDetector>,
     tls_proxy: ProxyTcpListener<TlsDestinationDetector>,
     rtsp_proxy: ProxyTcpListener<RtspDestinationDetector>,
@@ -94,6 +101,7 @@ pub struct QuicRelayer<SECURE, VALIDATE, REQ: ClusterRequest, TSH> {
 
     agent_quic_sessions: HashMap<AgentId, HashMap<AgentSessionId, (AgentSession<TunnelQuicStream>, AliasGuard)>>,
     agent_tcp_sessions: HashMap<AgentId, HashMap<AgentSessionId, (AgentSession<TunnelTcpStream>, AliasGuard)>>,
+    agent_tls_sessions: HashMap<AgentId, HashMap<AgentSessionId, (AgentSession<TunnelTlsStream>, AliasGuard)>>,
 }
 
 impl<SECURE, VALIDATE, REQ: ClusterRequest, TSH> QuicRelayer<SECURE, VALIDATE, REQ, TSH>
@@ -128,8 +136,9 @@ where
         cfg.tunnel_service_handle.start(&tunnel_service_ctx);
 
         Ok(Self {
-            agent_quic: AgentQuicListener::new(cfg.agent_listener, cfg.agent_key.clone_key(), cfg.agent_cert.clone(), validate.clone()).await?,
-            agent_tcp: AgentTlsListener::new(cfg.agent_listener, validate, cfg.agent_key, cfg.agent_cert).await?,
+            agent_quic: AgentQuicListener::new(cfg.agent_secure_listener, cfg.agent_key.clone_key(), cfg.agent_cert.clone(), validate.clone()).await?,
+            agent_tcp: AgentTcpListener::new(cfg.agent_unsecure_listener, validate.clone()).await?,
+            agent_tls: AgentTlsListener::new(cfg.agent_secure_listener, validate, cfg.agent_key, cfg.agent_cert).await?,
             http_proxy: ProxyTcpListener::new(cfg.proxy_http_listener, Default::default()).await?,
             tls_proxy: ProxyTcpListener::new(cfg.proxy_tls_listener, Default::default()).await?,
             rtsp_proxy: ProxyTcpListener::new(cfg.proxy_rtsp_listener, Default::default()).await?,
@@ -144,6 +153,7 @@ where
 
             agent_quic_sessions: HashMap::new(),
             agent_tcp_sessions: HashMap::new(),
+            agent_tls_sessions: HashMap::new(),
         })
     }
 
@@ -156,6 +166,16 @@ where
             }
         };
         if let Some(sessions) = self.agent_tcp_sessions.get(&agent_id) {
+            let session = sessions.values().next().expect("should have session");
+            let job = proxy_local_to_agent(is_from_cluster, proxy, dest, session.0.clone());
+            tokio::spawn(async move {
+                if let Err(e) = job.await {
+                    counter!(METRICS_PROXY_HTTP_ERROR_COUNT).increment(1);
+                    counter!(METRICS_TUNNEL_AGENT_ERROR_COUNT).increment(1);
+                    log::error!("[QuicRelayer {agent_id}] proxy to agent error {:?}", e);
+                };
+            });
+        } else if let Some(sessions) = self.agent_tls_sessions.get(&agent_id) {
             let session = sessions.values().next().expect("should have session");
             let job = proxy_local_to_agent(is_from_cluster, proxy, dest, session.0.clone());
             tokio::spawn(async move {
@@ -222,62 +242,9 @@ where
             _ = self.sdn.recv() =>  {
                 Ok(QuicRelayerEvent::Continue)
             },
-            event = self.agent_quic.recv() => match event? {
-                AgentListenerEvent::Connected(agent_id, agent_session) => {
-                    counter!(METRICS_AGENT_COUNT).increment(1);
-                    let session_id = agent_session.session_id();
-                    let domain = agent_session.domain().to_owned();
-                    log::info!("[QuicRelayer] agent {agent_id} {} connected", agent_session.session_id());
-                    let alias = self.sdn_alias_requester.register(*agent_id);
-                    self.agent_quic_sessions.entry(agent_id).or_default().insert(agent_session.session_id(), (agent_session, alias));
-                    gauge!(METRICS_AGENT_LIVE).increment(1.0);
-                    Ok(QuicRelayerEvent::AgentConnected(agent_id, session_id, domain))
-                },
-                AgentListenerEvent::IncomingStream(agent_id, agent_ctx, stream) => {
-                    self.tunnel_service_handle.on_agent_conn(&self.tunnel_service_ctx, agent_id, agent_ctx, stream);
-                    Ok(QuicRelayerEvent::Continue)
-                }
-                AgentListenerEvent::Disconnected(agent_id, session_id) => {
-                    log::info!("[QuicRelayer] agent {agent_id} {session_id} disconnected");
-                    if let Some(sessions) = self.agent_quic_sessions.get_mut(&agent_id) {
-                        sessions.remove(&session_id);
-                        if sessions.is_empty() {
-                            log::info!("[QuicRelayer] agent disconnected all connections {agent_id} {session_id}");
-                            self.agent_quic_sessions.remove(&agent_id);
-                        }
-                        gauge!(METRICS_AGENT_LIVE).decrement(1.0);
-                    }
-                    Ok(QuicRelayerEvent::AgentDisconnected(agent_id, session_id))
-                },
-            },
-            event = self.agent_tcp.recv() => match event? {
-                AgentListenerEvent::Connected(agent_id, agent_session) => {
-                    counter!(METRICS_AGENT_COUNT).increment(1);
-                    log::info!("[QuicRelayer] agent {agent_id} {} connected", agent_session.session_id());
-                    let session_id = agent_session.session_id();
-                    let domain = agent_session.domain().to_owned();
-                    let alias = self.sdn_alias_requester.register(*agent_id);
-                    self.agent_tcp_sessions.entry(agent_id).or_default().insert(agent_session.session_id(), (agent_session, alias));
-                    gauge!(METRICS_AGENT_LIVE).increment(1.0);
-                    Ok(QuicRelayerEvent::AgentConnected(agent_id, session_id, domain))
-                },
-                AgentListenerEvent::IncomingStream(agent_id, agent_ctx, stream) => {
-                    self.tunnel_service_handle.on_agent_conn(&self.tunnel_service_ctx, agent_id, agent_ctx, stream);
-                    Ok(QuicRelayerEvent::Continue)
-                }
-                AgentListenerEvent::Disconnected(agent_id, session_id) => {
-                    log::info!("[QuicRelayer] agent {agent_id} {session_id} disconnected");
-                    if let Some(sessions) = self.agent_tcp_sessions.get_mut(&agent_id) {
-                        sessions.remove(&session_id);
-                        if sessions.is_empty() {
-                            log::info!("[QuicRelayer] agent disconnected all connections {agent_id} {session_id}");
-                            self.agent_tcp_sessions.remove(&agent_id);
-                        }
-                        gauge!(METRICS_AGENT_LIVE).decrement(1.0);
-                    }
-                    Ok(QuicRelayerEvent::AgentDisconnected(agent_id, session_id))
-                },
-            },
+            event = self.agent_quic.recv() => process_incoming_event::<_, _, REQ>(event?, &self.sdn_alias_requester, &mut self.agent_quic_sessions, &mut self.tunnel_service_handle, &self.tunnel_service_ctx),
+            event = self.agent_tcp.recv() => process_incoming_event::<_, _, REQ>(event?, &self.sdn_alias_requester, &mut self.agent_tcp_sessions, &mut self.tunnel_service_handle, &self.tunnel_service_ctx),
+            event = self.agent_tls.recv() => process_incoming_event::<_, _, REQ>(event?, &self.sdn_alias_requester, &mut self.agent_tls_sessions, &mut self.tunnel_service_handle, &self.tunnel_service_ctx),
             event = self.sdn_proxy_service.recv() => match event.expect("sdn channel crash") {
                 P2pServiceEvent::Unicast(from, ..) => {
                     log::warn!("[QuicRelayer] proxy service don't accept unicast msg from {from}");
@@ -306,6 +273,48 @@ where
                 log::info!("[QuicRelayer] shutdown done");
                 Ok(QuicRelayerEvent::Continue)
             }
+        }
+    }
+}
+
+fn process_incoming_event<S, TSH, REQ>(
+    event: AgentListenerEvent<REQ::Context, S>,
+    alias_requester: &AliasServiceRequester,
+    sessions: &mut HashMap<AgentId, HashMap<AgentSessionId, (AgentSession<S>, AliasGuard)>>,
+    ths: &mut TSH,
+    tunnel_service_ctx: &TunnelServiceCtx,
+) -> anyhow::Result<QuicRelayerEvent>
+where
+    S: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static,
+    REQ: ClusterRequest,
+    TSH: TunnelServiceHandle<REQ::Context> + Send + Sync + 'static,
+{
+    match event {
+        AgentListenerEvent::Connected(agent_id, agent_session) => {
+            counter!(METRICS_AGENT_COUNT).increment(1);
+            log::info!("[QuicRelayer] agent {agent_id} {} connected", agent_session.session_id());
+            let session_id = agent_session.session_id();
+            let domain = agent_session.domain().to_owned();
+            let alias = alias_requester.register(*agent_id);
+            sessions.entry(agent_id).or_default().insert(agent_session.session_id(), (agent_session, alias));
+            gauge!(METRICS_AGENT_LIVE).increment(1.0);
+            Ok(QuicRelayerEvent::AgentConnected(agent_id, session_id, domain))
+        }
+        AgentListenerEvent::IncomingStream(agent_id, agent_ctx, stream) => {
+            ths.on_agent_conn(tunnel_service_ctx, agent_id, agent_ctx, stream);
+            Ok(QuicRelayerEvent::Continue)
+        }
+        AgentListenerEvent::Disconnected(agent_id, session_id) => {
+            log::info!("[QuicRelayer] agent {agent_id} {session_id} disconnected");
+            if let Some(child_sessions) = sessions.get_mut(&agent_id) {
+                child_sessions.remove(&session_id);
+                if child_sessions.is_empty() {
+                    log::info!("[QuicRelayer] agent disconnected all connections {agent_id} {session_id}");
+                    sessions.remove(&agent_id);
+                }
+                gauge!(METRICS_AGENT_LIVE).decrement(1.0);
+            }
+            Ok(QuicRelayerEvent::AgentDisconnected(agent_id, session_id))
         }
     }
 }

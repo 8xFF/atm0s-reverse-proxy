@@ -11,13 +11,15 @@ pub mod quic;
 #[cfg(feature = "tcp")]
 pub mod tcp;
 
-#[cfg(feature = "tcp")]
+#[cfg(feature = "tls")]
 pub mod tls;
 
 #[derive(Debug, Clone)]
 pub enum Protocol {
     #[cfg(feature = "tcp")]
     Tcp,
+    #[cfg(feature = "tls")]
+    Tls,
     #[cfg(feature = "quic")]
     Quic,
 }
@@ -28,6 +30,8 @@ impl FromStr for Protocol {
         match s {
             #[cfg(feature = "tcp")]
             "tcp" | "TCP" => Ok(Protocol::Tcp),
+            #[cfg(feature = "tls")]
+            "tls" | "TLS" => Ok(Protocol::Tls),
             #[cfg(feature = "quic")]
             "quic" | "QUIC" => Ok(Protocol::Quic),
             _ => Err("invalid protocol"),

@@ -22,7 +22,7 @@ pub struct TlsConnection<RES> {
 }
 
 impl<RES: DeserializeOwned> TlsConnection<RES> {
-    pub async fn new<AS: AgentSigner<RES>>(url: Url, agent_signer: &AS, rootca: Certificate) -> anyhow::Result<Self> {
+    pub async fn new<AS: AgentSigner<RES>>(url: Url, agent_signer: &AS, rootca: Certificate, allow_unsecure: bool) -> anyhow::Result<Self> {
         let url_host = url.host_str().ok_or(anyhow!("couldn't get host from url"))?;
         let url_port = url.port().unwrap_or(33333);
 
@@ -32,6 +32,7 @@ impl<RES: DeserializeOwned> TlsConnection<RES> {
 
         let connector_builder = tokio_native_tls::native_tls::TlsConnector::builder()
             .danger_accept_invalid_hostnames(true)
+            .danger_accept_invalid_certs(allow_unsecure)
             .add_root_certificate(rootca)
             .build()?;
         let connector = TlsConnector::from(connector_builder);

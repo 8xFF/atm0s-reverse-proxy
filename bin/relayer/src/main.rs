@@ -16,9 +16,13 @@ struct Args {
     #[arg(env, long, default_value = "local.ha.8xff.io")]
     root_domain: String,
 
-    /// UDP/TCP port for serving QUIC/TCP connection from agent
+    /// UDP/TCP port for serving TCP connection from agent
+    #[arg(env, long, default_value = "0.0.0.0:33330")]
+    agent_unsecure_listener: SocketAddr,
+
+    /// UDP/TCP port for serving QUIC/TLS connection from agent
     #[arg(env, long, default_value = "0.0.0.0:33333")]
-    agent_listener: SocketAddr,
+    agent_secure_listener: SocketAddr,
 
     /// UDP/TCP port for serving QUIC/TCP connection for SDN network
     #[arg(env, long)]
@@ -79,7 +83,8 @@ async fn main() {
     let default_cluster_key = PrivatePkcs8KeyDer::from(DEFAULT_CLUSTER_KEY.to_vec());
 
     let cfg = QuicRelayerConfig {
-        agent_listener: args.agent_listener,
+        agent_unsecure_listener: args.agent_unsecure_listener,
+        agent_secure_listener: args.agent_secure_listener,
         proxy_http_listener: args.proxy_http_listener,
         proxy_tls_listener: args.proxy_tls_listener,
         proxy_rtsp_listener: args.proxy_rtsp_listener,

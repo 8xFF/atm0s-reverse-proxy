@@ -15,19 +15,20 @@ use tokio::{
 };
 use tokio_rustls::server::TlsStream;
 use tokio_rustls::TlsAcceptor;
-use tokio_yamux::Session;
+use tokio_yamux::{Session, StreamHandle};
 
 use crate::agent::{AgentSession, AgentSessionControl};
 use crate::{AgentSessionId, METRICS_AGENT_HISTOGRAM};
 
-use super::{tcp::TunnelTcpStream, AgentListener, AgentListenerEvent};
+use super::{AgentListener, AgentListenerEvent};
 
+pub type TunnelTlsStream = StreamHandle;
 pub struct AgentTlsListener<VALIDATE, HANDSHAKE: ClusterRequest> {
     tls_acceptor: TlsAcceptor,
     validate: Arc<VALIDATE>,
     listener: TcpListener,
-    internal_tx: Sender<AgentListenerEvent<HANDSHAKE::Context, TunnelTcpStream>>,
-    internal_rx: Receiver<AgentListenerEvent<HANDSHAKE::Context, TunnelTcpStream>>,
+    internal_tx: Sender<AgentListenerEvent<HANDSHAKE::Context, TunnelTlsStream>>,
+    internal_rx: Receiver<AgentListenerEvent<HANDSHAKE::Context, TunnelTlsStream>>,
     _tmp: PhantomData<HANDSHAKE>,
 }
 
@@ -48,8 +49,8 @@ impl<VALIDATE, HANDSHAKE: ClusterRequest> AgentTlsListener<VALIDATE, HANDSHAKE> 
     }
 }
 
-impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'static + ClusterRequest> AgentListener<REQ::Context, TunnelTcpStream> for AgentTlsListener<VALIDATE, REQ> {
-    async fn recv(&mut self) -> anyhow::Result<AgentListenerEvent<REQ::Context, TunnelTcpStream>> {
+impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'static + ClusterRequest> AgentListener<REQ::Context, TunnelTlsStream> for AgentTlsListener<VALIDATE, REQ> {
+    async fn recv(&mut self) -> anyhow::Result<AgentListenerEvent<REQ::Context, TunnelTlsStream>> {
         loop {
             let (stream, remote) = select! {
                 incoming = self.listener.accept() => incoming?,
@@ -68,7 +69,7 @@ async fn run_connection<VALIDATE: ClusterValidator<REQ>, REQ: ClusterRequest>(
     validate: Arc<VALIDATE>,
     mut in_stream: TlsStream<TcpStream>,
     remote: SocketAddr,
-    internal_tx: Sender<AgentListenerEvent<REQ::Context, TunnelTcpStream>>,
+    internal_tx: Sender<AgentListenerEvent<REQ::Context, TunnelTlsStream>>,
 ) -> anyhow::Result<()> {
     let started = Instant::now();
     log::info!("[AgentTcp] new connection from {}", remote);

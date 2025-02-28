@@ -3,7 +3,8 @@ RUST_LOG=info cargo run -- \
     --proxy-tls-listener 127.0.0.1:12002 \
     --proxy-rtsp-listener 127.0.0.1:5342 \
     --proxy-rtsps-listener 127.0.0.1:35342 \
-    --agent-listener 127.0.0.1:13002 \
+    --agent-secure-listener 127.0.0.1:13002 \
+    --agent-unsecure-listener 127.0.0.1:23002 \
     --root-domain local.ha.8xff.io \
     --sdn-peer-id 2 \
     --sdn-listener 127.0.0.1:14002 \
