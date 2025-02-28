@@ -7,7 +7,10 @@ mod local_tunnel;
 #[cfg(feature = "quic")]
 pub use connection::quic::{QuicConnection, QuicSubConnection};
 #[cfg(feature = "tcp")]
-pub use connection::tcp::{TcpConnection, TcpSubConnection};
+pub use connection::{
+    tcp::{TcpConnection, TcpSubConnection},
+    tls::TlsConnection,
+};
 
 pub use connection::{Connection, Protocol, SubConnection};
 pub use local_tunnel::{registry::SimpleServiceRegistry, LocalTunnel, ServiceRegistry};

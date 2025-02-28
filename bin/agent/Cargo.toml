@@ -19,6 +19,7 @@ serde = { workspace = true, features = ["derive"] }
 url = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true, optional = true }
+tokio-native-tls = { workspace = true, optional = true }
 
 # for binary build
 picolog = { workspace = true, optional = true }
@@ -28,12 +29,17 @@ argh = { workspace = true, optional = true }
 tokio-yamux = { workspace = true, optional = true }
 
 # for quic protocol
-quinn = { workspace = true, features = ["ring", "runtime-tokio", "futures-io"], optional = true }
+quinn = { workspace = true, features = [
+    "ring",
+    "runtime-tokio",
+    "futures-io",
+], optional = true }
 rustls = { workspace = true, features = ["ring", "std"], optional = true }
 base64 = { workspace = true, optional = true }
 
 [features]
-default = ["binary", "tcp"]
+default = ["binary", "tcp", "tls", "quic"]
 binary = ["protocol-ed25519", "argh", "picolog"]
 tcp = ["tokio-yamux"]
+tls = ["tcp", "tokio-native-tls", "base64"]
 quic = ["quinn", "rustls", "base64", "thiserror"]

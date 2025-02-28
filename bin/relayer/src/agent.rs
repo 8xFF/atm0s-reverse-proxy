@@ -7,6 +7,7 @@ use tokio::{
 
 pub mod quic;
 pub mod tcp;
+pub mod tls;
 
 #[derive(Debug, Hash, Display, PartialEq, Eq, From, Deref, Clone, Copy)]
 pub struct AgentSessionId(u64);

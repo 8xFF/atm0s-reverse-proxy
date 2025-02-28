@@ -1,4 +1,4 @@
-RUST_LOG=info cargo run -- \
+RUST_LOG=info cargo run --features quic -- \
     --connector-protocol quic \
     --connector-addr https://127.0.0.1:13001 \
     --http-dest 127.0.0.1:8080 \

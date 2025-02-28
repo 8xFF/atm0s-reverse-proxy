@@ -6,21 +6,22 @@ use picolog::PicoLogger;
 
 #[cfg(feature = "quic")]
 use atm0s_reverse_proxy_agent::QuicConnection;
-#[cfg(feature = "tcp")]
-use atm0s_reverse_proxy_agent::TcpConnection;
-use atm0s_reverse_proxy_agent::{run_tunnel_connection, Connection, Protocol, ServiceRegistry, SimpleServiceRegistry, SubConnection};
-#[cfg(feature = "quic")]
+#[cfg(feature = "tls")]
+use atm0s_reverse_proxy_agent::TlsConnection;
+use atm0s_reverse_proxy_agent::{run_tunnel_connection, Connection, Protocol, ServiceRegistry, SimpleServiceRegistry, SubConnection, TcpConnection};
+#[cfg(any(feature = "quic", feature = "tls"))]
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 
 use argh::FromArgs;
 use protocol::services::SERVICE_RTSP;
-#[cfg(feature = "quic")]
+#[cfg(any(feature = "quic", feature = "tls"))]
 use protocol::DEFAULT_TUNNEL_CERT;
 use protocol_ed25519::AgentLocalKey;
 #[cfg(feature = "quic")]
 use rustls::pki_types::CertificateDer;
 use tokio::time::sleep;
-// use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+#[cfg(feature = "tls")]
+use tokio_native_tls::native_tls::Certificate;
 use url::Url;
 
 #[global_allocator]
@@ -66,6 +67,16 @@ struct Args {
     /// allow connect in insecure mode
     #[argh(switch)]
     allow_quic_insecure: bool,
+
+    #[cfg(feature = "tls")]
+    /// custom tls server cert in base64
+    #[argh(option)]
+    custom_tls_cert_base64: Option<String>,
+
+    #[cfg(feature = "tls")]
+    /// allow connect in insecure mode
+    #[argh(switch)]
+    allow_tls_insecure: bool,
 }
 
 #[tokio::main]
@@ -79,10 +90,17 @@ async fn main() {
     PicoLogger::new(level).init();
 
     #[cfg(feature = "quic")]
-    let server_certs = if let Some(cert) = args.custom_quic_cert_base64 {
+    let quic_certs = if let Some(cert) = args.custom_quic_cert_base64 {
         vec![CertificateDer::from(URL_SAFE.decode(cert).expect("Custom cert should in base64 format").to_vec())]
     } else {
         vec![CertificateDer::from(DEFAULT_TUNNEL_CERT.to_vec())]
+    };
+
+    #[cfg(feature = "tls")]
+    let tls_cert = if let Some(cert) = args.custom_tls_cert_base64 {
+        Certificate::from_der(&URL_SAFE.decode(cert).expect("Custom cert should in base64 format")).expect("should load custom cert")
+    } else {
+        Certificate::from_der(DEFAULT_TUNNEL_CERT).expect("should load default cert")
     };
 
     #[cfg(feature = "quic")]
@@ -136,8 +154,18 @@ async fn main() {
                     log::error!("Connect to connector via tcp error: {e}");
                 }
             },
+            #[cfg(feature = "tls")]
+            Protocol::Tls => match TlsConnection::new(args.connector_addr.clone(), &agent_signer, tls_cert.clone(), args.allow_tls_insecure).await {
+                Ok(conn) => {
+                    log::info!("Connected to connector via tcp with res {:?}", conn.response());
+                    run_connection_loop(conn, registry.clone()).await;
+                }
+                Err(e) => {
+                    log::error!("Connect to connector via tcp error: {e}");
+                }
+            },
             #[cfg(feature = "quic")]
-            Protocol::Quic => match QuicConnection::new(args.connector_addr.clone(), &agent_signer, &server_certs, args.allow_quic_insecure).await {
+            Protocol::Quic => match QuicConnection::new(args.connector_addr.clone(), &agent_signer, &quic_certs, args.allow_quic_insecure).await {
                 Ok(conn) => {
                     log::info!("Connected to connector via quic with res {:?}", conn.response());
                     run_connection_loop(conn, registry.clone()).await;
