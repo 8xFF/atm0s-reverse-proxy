@@ -281,7 +281,7 @@ fn process_incoming_event<S, TSH, REQ>(
     event: AgentListenerEvent<REQ::Context, S>,
     alias_requester: &AliasServiceRequester,
     sessions: &mut HashMap<AgentId, HashMap<AgentSessionId, (AgentSession<S>, AliasGuard)>>,
-    ths: &mut TSH,
+    tunnel_service_handle: &mut TSH,
     tunnel_service_ctx: &TunnelServiceCtx,
 ) -> anyhow::Result<QuicRelayerEvent>
 where
@@ -301,7 +301,7 @@ where
             Ok(QuicRelayerEvent::AgentConnected(agent_id, session_id, domain))
         }
         AgentListenerEvent::IncomingStream(agent_id, agent_ctx, stream) => {
-            ths.on_agent_conn(tunnel_service_ctx, agent_id, agent_ctx, stream);
+            tunnel_service_handle.on_agent_conn(tunnel_service_ctx, agent_id, agent_ctx, stream);
             Ok(QuicRelayerEvent::Continue)
         }
         AgentListenerEvent::Disconnected(agent_id, session_id) => {
