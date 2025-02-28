@@ -44,7 +44,7 @@ parking_lot = "0.12"
 futures = "0.3"
 tokio-util = "0.7"
 test-log = "0.2"
-lru = "0.12"
+lru = "0.13"
 tokio-native-tls = "0.3.1"
 tokio-rustls = "0.26.1"
 
