@@ -13,7 +13,6 @@ use tokio::{
     select,
     sync::mpsc::{channel, Receiver, Sender},
 };
-use tokio_rustls::server::TlsStream;
 use tokio_rustls::TlsAcceptor;
 use tokio_yamux::{Session, StreamHandle};
 
@@ -24,7 +23,7 @@ use super::{AgentListener, AgentListenerEvent};
 
 pub type TunnelTlsStream = StreamHandle;
 pub struct AgentTlsListener<VALIDATE, HANDSHAKE: ClusterRequest> {
-    tls_acceptor: TlsAcceptor,
+    tls_acceptor: Arc<TlsAcceptor>,
     validate: Arc<VALIDATE>,
     listener: TcpListener,
     internal_tx: Sender<AgentListenerEvent<HANDSHAKE::Context, TunnelTlsStream>>,
@@ -34,12 +33,13 @@ pub struct AgentTlsListener<VALIDATE, HANDSHAKE: ClusterRequest> {
 
 impl<VALIDATE, HANDSHAKE: ClusterRequest> AgentTlsListener<VALIDATE, HANDSHAKE> {
     pub async fn new(addr: SocketAddr, validate: VALIDATE, key: PrivatePkcs8KeyDer<'static>, cert: CertificateDer<'static>) -> anyhow::Result<Self> {
+        log::info!("[AgentTls] starting with addr {addr}");
         let (internal_tx, internal_rx) = channel(10);
         let config = rustls::ServerConfig::builder().with_no_client_auth().with_single_cert(vec![cert], PrivateKeyDer::Pkcs8(key))?;
         let tls_acceptor = TlsAcceptor::from(Arc::new(config));
 
         Ok(Self {
-            tls_acceptor,
+            tls_acceptor: Arc::new(tls_acceptor),
             listener: TcpListener::bind(addr).await?,
             internal_tx,
             internal_rx,
@@ -57,8 +57,14 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
                 event = self.internal_rx.recv() => break Ok(event.expect("should receive event from internal channel")),
             };
 
-            let tls_stream = self.tls_acceptor.accept(stream).await?;
-            tokio::spawn(run_connection(self.validate.clone(), tls_stream, remote, self.internal_tx.clone()));
+            let tls_acceptor = self.tls_acceptor.clone();
+            let validate = self.validate.clone();
+            let internal_tx = self.internal_tx.clone();
+            tokio::spawn(async move {
+                if let Err(e) = run_connection(validate, tls_acceptor, stream, remote, internal_tx).await {
+                    log::error!("[AgentTls] connection {remote} error {e:?}");
+                }
+            });
         }
     }
 
@@ -67,17 +73,20 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
 
 async fn run_connection<VALIDATE: ClusterValidator<REQ>, REQ: ClusterRequest>(
     validate: Arc<VALIDATE>,
-    mut in_stream: TlsStream<TcpStream>,
+    tls_acceptor: Arc<TlsAcceptor>,
+    stream: TcpStream,
     remote: SocketAddr,
     internal_tx: Sender<AgentListenerEvent<REQ::Context, TunnelTlsStream>>,
 ) -> anyhow::Result<()> {
     let started = Instant::now();
-    log::info!("[AgentTcp] new connection from {}", remote);
+    log::info!("[AgentTls] new connection from {remote}, handshaking tls");
+    let mut in_stream = tls_acceptor.accept(stream).await?;
+    log::info!("[AgentTls] new connection from {remote}, handshake tls success");
 
     let mut buf = [0u8; 4096];
     let buf_len = in_stream.read(&mut buf).await?;
 
-    log::info!("[AgentTcp] new connection got handhsake data {buf_len} bytes");
+    log::info!("[AgentTls] new connection from {remote} got handhsake data {buf_len} bytes");
 
     let req = validate.validate_connect_req(&buf[0..buf_len])?;
     let domain = validate.generate_domain(&req)?;
@@ -85,7 +94,7 @@ async fn run_connection<VALIDATE: ClusterValidator<REQ>, REQ: ClusterRequest>(
     let session_id = AgentSessionId::rand();
     let agent_ctx = req.context();
 
-    log::info!("[AgentTcp] new connection validated with domain {domain} agent_id: {agent_id}, session uuid: {session_id}");
+    log::info!("[AgentTls] new connection from {remote} validated with domain {domain} agent_id: {agent_id}, session uuid: {session_id}");
 
     let res_buf = validate.sign_response_res(&req, None);
     in_stream.write_all(&res_buf).await?;
@@ -96,7 +105,7 @@ async fn run_connection<VALIDATE: ClusterValidator<REQ>, REQ: ClusterRequest>(
         .await
         .expect("should send to main loop");
 
-    log::info!("[AgentTcp] new connection {agent_id} {session_id}  started loop");
+    log::info!("[AgentTls] new connection {agent_id} {session_id}  started loop");
     let mut session = Session::new_client(in_stream, Default::default());
     histogram!(METRICS_AGENT_HISTOGRAM).record(started.elapsed().as_millis() as f32 / 1000.0);
 
@@ -105,17 +114,17 @@ async fn run_connection<VALIDATE: ClusterValidator<REQ>, REQ: ClusterRequest>(
             control = control_rx.recv() => match control {
                 Some(control) => match control {
                     AgentSessionControl::CreateStream(tx) => {
-                        log::info!("[AgentTcp] agent {agent_id} {session_id} create stream request");
+                        log::info!("[AgentTls] agent {agent_id} {session_id} create stream request");
                         match session.open_stream() {
                             Ok(stream) => {
-                                log::info!("[AgentTcp] agent {agent_id} {session_id} created stream");
+                                log::info!("[AgentTls] agent {agent_id} {session_id} created stream");
                                 if let Err(_e) = tx.send(Ok(stream)) {
-                                    log::error!("[AgentTcp] agent {agent_id} {session_id}  send created stream error");
+                                    log::error!("[AgentTls] agent {agent_id} {session_id}  send created stream error");
                                 }
                             },
                             Err(err) => {
                                 if let Err(_e) = tx.send(Err(err.into())) {
-                                    log::error!("[AgentTcp] agent {agent_id} {session_id}  send create stream's error, may be internal channel failed");
+                                    log::error!("[AgentTls] agent {agent_id} {session_id}  send create stream's error, may be internal channel failed");
                                 }
                             },
                         }
@@ -134,18 +143,18 @@ async fn run_connection<VALIDATE: ClusterValidator<REQ>, REQ: ClusterRequest>(
                     });
                 },
                 Some(Err(err)) => {
-                    log::error!("[AgentTcp] agent {agent_id} {session_id} Tcp connection error {err:?}");
+                    log::error!("[AgentTls] agent {agent_id} {session_id} Tcp connection error {err:?}");
                     break;
                 },
                 None => {
-                    log::error!("[AgentTcp] agent {agent_id} {session_id} Tcp connection broken with None");
+                    log::error!("[AgentTls] agent {agent_id} {session_id} Tcp connection broken with None");
                     break;
                 }
             }
         }
     }
 
-    log::info!("[AgentTcp] agent {agent_id} {session_id}  stopped loop");
+    log::info!("[AgentTls] agent {agent_id} {session_id}  stopped loop");
 
     internal_tx.send(AgentListenerEvent::Disconnected(agent_id, session_id)).await.expect("should send to main loop");
 
