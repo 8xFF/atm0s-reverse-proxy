@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-relayer-v0.6.0...atm0s-reverse-proxy-relayer-v0.6.1) - 2025-03-03
+
+### Fixed
+
+- tls server recv function shouldn't contain await ([#96](https://github.com/8xFF/atm0s-reverse-proxy/pull/96))
+
 ## [0.6.0](https://github.com/8xFF/atm0s-reverse-proxy/compare/atm0s-reverse-proxy-relayer-v0.5.0...atm0s-reverse-proxy-relayer-v0.6.0) - 2025-02-28
 
 ### Added
