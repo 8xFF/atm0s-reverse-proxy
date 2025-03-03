@@ -31,6 +31,7 @@ pub struct AgentTcpListener<VALIDATE, HANDSHAKE: ClusterRequest> {
 
 impl<VALIDATE, HANDSHAKE: ClusterRequest> AgentTcpListener<VALIDATE, HANDSHAKE> {
     pub async fn new(addr: SocketAddr, validate: VALIDATE) -> anyhow::Result<Self> {
+        log::info!("[AgentTcp] starting with addr {addr}");
         let (internal_tx, internal_rx) = channel(10);
 
         Ok(Self {
@@ -49,7 +50,13 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
             select! {
                 incoming = self.listener.accept() => {
                     let (stream, remote) = incoming?;
-                    tokio::spawn(run_connection(self.validate.clone(), stream, remote, self.internal_tx.clone()));
+                    let validate = self.validate.clone();
+                    let internal_tx = self.internal_tx.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = run_connection(validate, stream, remote, internal_tx).await {
+                            log::error!("[AgentTcp] connection {remote} error {e:?}");
+                        }
+                    });
                 },
                 event = self.internal_rx.recv() => break Ok(event.expect("should receive event from internal channel")),
             }

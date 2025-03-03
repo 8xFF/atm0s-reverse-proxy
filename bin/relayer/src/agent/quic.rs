@@ -33,6 +33,7 @@ pub struct AgentQuicListener<VALIDATE, HANDSHAKE: ClusterRequest> {
 
 impl<VALIDATE, HANDSHAKE: ClusterRequest> AgentQuicListener<VALIDATE, HANDSHAKE> {
     pub async fn new(addr: SocketAddr, priv_key: PrivatePkcs8KeyDer<'static>, cert: CertificateDer<'static>, validate: VALIDATE) -> anyhow::Result<Self> {
+        log::info!("[AgentQuic] starting with addr {addr}");
         let endpoint = make_server_endpoint(addr, priv_key, cert)?;
         let (internal_tx, internal_rx) = channel(10);
 
@@ -51,7 +52,15 @@ impl<VALIDATE: ClusterValidator<REQ>, REQ: DeserializeOwned + Send + Sync + 'sta
         loop {
             select! {
                 incoming = self.endpoint.accept() => {
-                    tokio::spawn(run_connection(self.validate.clone(), incoming.ok_or(anyhow!("quinn crash"))?, self.internal_tx.clone()));
+                    let validate = self.validate.clone();
+                    let internal_tx = self.internal_tx.clone();
+                    let incoming = incoming.ok_or(anyhow!("quinn crash"))?;
+                    let remote = incoming.remote_address();
+                    tokio::spawn(async move {
+                        if let Err(e) = run_connection(validate, incoming, internal_tx).await {
+                            log::error!("[AgentQuic] connection {remote} error {e:?}");
+                        }
+                    });
                 },
                 event = self.internal_rx.recv() => break Ok(event.expect("should work")),
             }
