@@ -34,6 +34,8 @@ pub const METRICS_TUNNEL_AGENT_HISTOGRAM: &str = "atm0s_tunnel_agent_histogram";
 pub const METRICS_TUNNEL_AGENT_ERROR_COUNT: &str = "atm0s_tunnel_agent_error_count";
 
 pub fn describe_metrics() {
+    p2p::init_metrics();
+
     // this is for online agent counting
     describe_gauge!(METRICS_AGENT_LIVE, "Live agent count");
     describe_histogram!(METRICS_AGENT_HISTOGRAM, "Incoming agent connection accept time histogram");
