@@ -16,7 +16,12 @@ pub const METRICS_PROXY_HTTP_LIVE: &str = "atm0s_proxy_http_live";
 pub const METRICS_PROXY_HTTP_COUNT: &str = "atm0s_proxy_http_count";
 pub const METRICS_PROXY_HTTP_ERROR_COUNT: &str = "atm0s_proxy_http_error_count";
 
-// this is for cluster proxy (incoming)
+// this is for incoming proxy from outside
+pub const METRICS_PROXY_OUTSIDE_LIVE: &str = "atm0s_proxy_outside_live";
+pub const METRICS_PROXY_OUTSIDE_COUNT: &str = "atm0s_proxy_outside_count";
+pub const METRICS_PROXY_OUTSIDE_ERROR_COUNT: &str = "atm0s_proxy_outside_error_count";
+
+// this is for incoming proxy from cluster
 pub const METRICS_PROXY_CLUSTER_LIVE: &str = "atm0s_proxy_cluster_live";
 pub const METRICS_PROXY_CLUSTER_COUNT: &str = "atm0s_proxy_cluster_count";
 pub const METRICS_PROXY_CLUSTER_ERROR_COUNT: &str = "atm0s_proxy_cluster_error_count";
@@ -47,10 +52,10 @@ pub fn describe_metrics() {
     describe_histogram!(METRICS_PROXY_AGENT_HISTOGRAM, "Incoming proxy from agent to cluster latency histogram");
     describe_counter!(METRICS_PROXY_AGENT_ERROR_COUNT, "Number of incoming proxy error from agent to cluster");
 
-    // this is for http proxy counting (incoming)
-    describe_gauge!(METRICS_PROXY_HTTP_LIVE, "Live incoming http proxy");
-    describe_counter!(METRICS_PROXY_HTTP_COUNT, "Number of incoming http proxy");
-    describe_counter!(METRICS_PROXY_HTTP_ERROR_COUNT, "Number of incoming http proxy error");
+    // this is for incoming proxy from outside
+    describe_gauge!(METRICS_PROXY_OUTSIDE_LIVE, "Live incoming outside proxy");
+    describe_counter!(METRICS_PROXY_OUTSIDE_COUNT, "Number of incoming outside proxy");
+    describe_counter!(METRICS_PROXY_OUTSIDE_ERROR_COUNT, "Number of incoming outside proxy error");
 
     // this is for cluster proxy (incoming)
     describe_gauge!(METRICS_PROXY_CLUSTER_LIVE, "Live incoming cluster proxy");

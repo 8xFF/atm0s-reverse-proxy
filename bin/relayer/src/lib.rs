@@ -170,7 +170,7 @@ where
             let job = proxy_local_to_agent(is_from_cluster, proxy, dest, session.0.clone());
             tokio::spawn(async move {
                 if let Err(e) = job.await {
-                    counter!(METRICS_PROXY_HTTP_ERROR_COUNT).increment(1);
+                    counter!(METRICS_PROXY_OUTSIDE_ERROR_COUNT).increment(1);
                     counter!(METRICS_TUNNEL_AGENT_ERROR_COUNT).increment(1);
                     log::error!("[QuicRelayer {agent_id}] proxy to agent error {:?}", e);
                 };
@@ -180,7 +180,7 @@ where
             let job = proxy_local_to_agent(is_from_cluster, proxy, dest, session.0.clone());
             tokio::spawn(async move {
                 if let Err(e) = job.await {
-                    counter!(METRICS_PROXY_HTTP_ERROR_COUNT).increment(1);
+                    counter!(METRICS_PROXY_OUTSIDE_ERROR_COUNT).increment(1);
                     counter!(METRICS_TUNNEL_AGENT_ERROR_COUNT).increment(1);
                     log::error!("[QuicRelayer {agent_id}] proxy to agent error {:?}", e);
                 };
@@ -190,7 +190,7 @@ where
             let job = proxy_local_to_agent(is_from_cluster, proxy, dest, session.0.clone());
             tokio::spawn(async move {
                 if let Err(e) = job.await {
-                    counter!(METRICS_PROXY_HTTP_ERROR_COUNT).increment(1);
+                    counter!(METRICS_PROXY_OUTSIDE_ERROR_COUNT).increment(1);
                     counter!(METRICS_TUNNEL_AGENT_ERROR_COUNT).increment(1);
                     log::error!("[QuicRelayer {agent_id}] proxy to agent error {:?}", e);
                 };
@@ -201,7 +201,7 @@ where
             let job = proxy_to_cluster(proxy, dest, self.sdn_alias_requester.clone(), sdn_requester);
             tokio::spawn(async move {
                 if let Err(e) = job.await {
-                    counter!(METRICS_PROXY_HTTP_ERROR_COUNT).increment(1);
+                    counter!(METRICS_PROXY_OUTSIDE_ERROR_COUNT).increment(1);
                     counter!(METRICS_TUNNEL_CLUSTER_ERROR_COUNT).increment(1);
                     log::error!("[QuicRelayer {agent_id}] proxy to cluster error {:?}", e);
                 };
@@ -330,13 +330,12 @@ async fn proxy_local_to_agent<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 
     if is_from_cluster {
         counter!(METRICS_PROXY_CLUSTER_COUNT).increment(1);
     } else {
-        counter!(METRICS_PROXY_HTTP_COUNT).increment(1);
+        counter!(METRICS_PROXY_OUTSIDE_COUNT).increment(1);
     }
     counter!(METRICS_TUNNEL_AGENT_COUNT).increment(1);
     log::info!("[ProxyLocal {agent_id}] creating stream to agent");
     let mut stream = agent.create_stream().await?;
 
-    histogram!(METRICS_TUNNEL_AGENT_HISTOGRAM).record(started.elapsed().as_millis() as f32 / 1000.0);
     log::info!("[ProxyLocal {agent_id}] created stream to agent => writing connect request");
     write_object::<_, _, 500>(
         &mut stream,
@@ -354,25 +353,28 @@ async fn proxy_local_to_agent<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 
     if is_from_cluster {
         gauge!(METRICS_PROXY_CLUSTER_LIVE).increment(1.0);
     } else {
-        gauge!(METRICS_PROXY_HTTP_LIVE).increment(1.0);
+        gauge!(METRICS_PROXY_OUTSIDE_LIVE).increment(1.0);
     }
-    match copy_bidirectional(&mut proxy, &mut stream).await {
+    let retval = match copy_bidirectional(&mut proxy, &mut stream).await {
         Ok(res) => {
             log::info!("[ProxyLocal {agent_id}] proxy data with agent done with res {res:?}");
+            Ok(())
         }
         Err(e) => {
             log::error!("[ProxyLocal {agent_id}] proxy data with agent error {e}");
+            Err(e.into())
         }
     };
 
+    histogram!(METRICS_TUNNEL_AGENT_HISTOGRAM).record(started.elapsed().as_millis() as f32 / 1000.0);
     if is_from_cluster {
         gauge!(METRICS_PROXY_CLUSTER_LIVE).decrement(1.0);
     } else {
-        gauge!(METRICS_PROXY_HTTP_LIVE).decrement(1.0);
+        gauge!(METRICS_PROXY_OUTSIDE_LIVE).decrement(1.0);
     }
     gauge!(METRICS_TUNNEL_AGENT_LIVE).decrement(1.0);
 
-    Ok(())
+    retval
 }
 
 async fn proxy_to_cluster<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(
@@ -382,7 +384,7 @@ async fn proxy_to_cluster<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'sta
     sdn_requester: P2pServiceRequester,
 ) -> anyhow::Result<()> {
     let started = Instant::now();
-    counter!(METRICS_PROXY_HTTP_COUNT).increment(1);
+    counter!(METRICS_PROXY_OUTSIDE_COUNT).increment(1);
     counter!(METRICS_TUNNEL_CLUSTER_COUNT).increment(1);
     let agent_id = dest.agent_id()?;
     log::info!("[ProxyCluster {agent_id}] finding location of agent {agent_id}");
@@ -397,22 +399,24 @@ async fn proxy_to_cluster<T: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'sta
     let meta = bincode::serialize(&dest).expect("should convert ProxyDestination to bytes");
 
     let mut stream = sdn_requester.open_stream(dest_node, meta).await?;
-    histogram!(METRICS_TUNNEL_CLUSTER_HISTOGRAM).record(started.elapsed().as_millis() as f32 / 1000.0);
 
     log::info!("[ProxyCluster {agent_id}] proxy over {dest_node} ...");
     gauge!(METRICS_TUNNEL_CLUSTER_LIVE).increment(1.0);
-    gauge!(METRICS_PROXY_HTTP_LIVE).increment(1.0);
+    gauge!(METRICS_PROXY_OUTSIDE_LIVE).increment(1.0);
 
-    match copy_bidirectional(&mut proxy, &mut stream).await {
+    let retval = match copy_bidirectional(&mut proxy, &mut stream).await {
         Ok(res) => {
             log::info!("[ProxyCluster {agent_id}] proxy over {dest_node} done with res {res:?}");
+            Ok(())
         }
         Err(e) => {
             log::error!("[ProxyCluster {agent_id}] proxy over {dest_node} error {e}");
+            Err(e.into())
         }
-    }
+    };
 
-    gauge!(METRICS_PROXY_HTTP_LIVE).decrement(1.0);
+    histogram!(METRICS_TUNNEL_CLUSTER_HISTOGRAM).record(started.elapsed().as_millis() as f32 / 1000.0);
+    gauge!(METRICS_PROXY_OUTSIDE_LIVE).decrement(1.0);
     gauge!(METRICS_TUNNEL_CLUSTER_LIVE).decrement(1.0);
-    Ok(())
+    retval
 }
