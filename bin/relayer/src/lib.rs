@@ -307,6 +307,8 @@ where
                     gauge!(METRICS_AGENT_LIVE).increment(1.0);
                 }
             }
+            gauge!(METRICS_PROXY_AGENT_SESSION_LIVE).increment(1.0);
+            counter!(METRICS_PROXY_AGENT_SESSION_INSERT).increment(1);
             Ok(QuicRelayerEvent::AgentConnected(agent_id, session_id, domain))
         }
         AgentListenerEvent::IncomingStream(agent_id, agent_ctx, stream) => {
@@ -322,6 +324,8 @@ where
                     sessions.remove(&agent_id);
                     gauge!(METRICS_AGENT_LIVE).decrement(1.0);
                 }
+                counter!(METRICS_PROXY_AGENT_SESSION_REMOVE).increment(1);
+                gauge!(METRICS_PROXY_AGENT_SESSION_LIVE).decrement(1.0);
             }
             Ok(QuicRelayerEvent::AgentDisconnected(agent_id, session_id))
         }

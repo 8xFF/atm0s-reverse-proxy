@@ -5,6 +5,10 @@ pub const METRICS_AGENT_LIVE: &str = "atm0s_agent_live";
 pub const METRICS_AGENT_HISTOGRAM: &str = "atm0s_agent_histogram";
 pub const METRICS_AGENT_COUNT: &str = "atm0s_agent_count";
 
+pub const METRICS_PROXY_AGENT_SESSION_LIVE: &str = "atm0s_proxy_agent_session_live";
+pub const METRICS_PROXY_AGENT_SESSION_INSERT: &str = "atm0s_proxy_agent_session_insert";
+pub const METRICS_PROXY_AGENT_SESSION_REMOVE: &str = "atm0s_proxy_agent_session_remove";
+
 // this is for proxy from agent counting (incoming)
 pub const METRICS_PROXY_AGENT_LIVE: &str = "atm0s_proxy_agent_live";
 pub const METRICS_PROXY_AGENT_COUNT: &str = "atm0s_proxy_agent_count";
@@ -45,6 +49,10 @@ pub fn describe_metrics() {
     describe_gauge!(METRICS_AGENT_LIVE, "Live agent count");
     describe_histogram!(METRICS_AGENT_HISTOGRAM, "Incoming agent connection accept time histogram");
     describe_counter!(METRICS_AGENT_COUNT, "Number of connected agents");
+
+    describe_gauge!(METRICS_PROXY_AGENT_SESSION_LIVE, "Live agent session count");
+    describe_counter!(METRICS_PROXY_AGENT_SESSION_INSERT, "Number of agent session insert");
+    describe_counter!(METRICS_PROXY_AGENT_SESSION_REMOVE, "Number of agent session remove");
 
     // this is for proxy from agent counting (incoming)
     describe_gauge!(METRICS_PROXY_AGENT_LIVE, "Live incoming proxy from agent to cluster");
