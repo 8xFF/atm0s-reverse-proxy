@@ -296,8 +296,17 @@ where
             let session_id = agent_session.session_id();
             let domain = agent_session.domain().to_owned();
             let alias = alias_requester.register(*agent_id);
-            sessions.entry(agent_id).or_default().insert(agent_session.session_id(), (agent_session, alias));
-            gauge!(METRICS_AGENT_LIVE).increment(1.0);
+            match sessions.get_mut(&agent_id) {
+                Some(child_session) => {
+                    child_session.insert(session_id, (agent_session, alias));
+                }
+                None => {
+                    let mut child_session = HashMap::new();
+                    child_session.insert(agent_session.session_id(), (agent_session, alias));
+                    sessions.insert(agent_id, child_session);
+                    gauge!(METRICS_AGENT_LIVE).increment(1.0);
+                }
+            }
             Ok(QuicRelayerEvent::AgentConnected(agent_id, session_id, domain))
         }
         AgentListenerEvent::IncomingStream(agent_id, agent_ctx, stream) => {
@@ -311,8 +320,8 @@ where
                 if child_sessions.is_empty() {
                     log::info!("[QuicRelayer] agent disconnected all connections {agent_id} {session_id}");
                     sessions.remove(&agent_id);
+                    gauge!(METRICS_AGENT_LIVE).decrement(1.0);
                 }
-                gauge!(METRICS_AGENT_LIVE).decrement(1.0);
             }
             Ok(QuicRelayerEvent::AgentDisconnected(agent_id, session_id))
         }
