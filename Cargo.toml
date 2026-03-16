@@ -15,7 +15,7 @@ protocol-ed25519 = { path = "crates/protocol_ed25519", package = "atm0s-reverse-
 log = "0.4"
 tokio-yamux = "0.3"
 clap = "4.4"
-argh = "=0.1.13" # small cli
+argh = "=0.1.19" # small cli
 async-trait = "0.1"
 tokio = "1"
 httparse = "1.8"
